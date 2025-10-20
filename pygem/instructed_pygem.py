@@ -3,7 +3,7 @@
     using the ice-flow module of IGM as a solver for ice dynamics and ice thickness evolution. 
     The mass balance model is taken from PyGEM.    
     
-    Code written by: Henning Åkesson
+    Code written by: Henning Åkesson, Johannes Brunner
     Based on instructed_oggm.py by Julien Jehl, Fabien Maussion, and Guillaume Jouvet 
 """
 
