@@ -3,7 +3,7 @@ Python Glacier Evolution Model (PyGEM)
 
 copyright © 2018 David Rounce <drounce@cmu.edu>
 
-Distributed under the MIT license
+Distrubted under the MIT lisence
 
 Run a model simulation
 """
@@ -49,6 +49,7 @@ import pygem.gcmbiasadj as gcmbiasadj
 import pygem.pygem_modelsetup as modelsetup
 from pygem import class_climate, output
 from pygem.glacierdynamics import MassRedistributionCurveModel
+from pygem.instructed_pygem import IGM_Model2D #is this import needed here?
 from pygem.massbalance import PyGEMMassBalance
 from pygem.oggm_compat import (
     single_flowline_glacier_directory,
@@ -266,13 +267,13 @@ def getparser():
         action='store',
         type=none_or_value,
         default=pygem_prms['sim']['option_dynamics'],
-        help='glacier dynamics scheme (options: ``OGGM`, `MassRedistributionCurves`, `None`)',
+        help='glacier dynamics scheme (options: ``OGGM`,`IGM` `MassRedistributionCurves`, `None`)',
     )
     parser.add_argument(
-        '-use_regional_glen_a',
+        '-use_reg_glena',
         action='store',
         type=bool,
-        default=pygem_prms['sim']['oggm_dynamics']['use_regional_glen_a'],
+        default=pygem_prms['sim']['oggm_dynamics']['use_reg_glena'],
         help='Take the glacier flow parameterization from regionally calibrated priors (boolean: `0` or `1`, `True` or `False`)',
     )
     parser.add_argument(
@@ -334,12 +335,6 @@ def getparser():
         '-option_ordered',
         action='store_true',
         help='Flag to keep glacier lists ordered (default is off)',
-    )
-    parser.add_argument(
-        '-spinup',
-        action='store_true',
-        default=False,
-        help='Flag to perform dynamical spinup before calibration',
     )
     parser.add_argument('-v', '--debug', action='store_true', help='Flag for debugging')
 
@@ -430,17 +425,17 @@ def run(list_packed_vars):
     # ----- Select Temperature and Precipitation Data -----
     # Air temperature [degC]
     gcm_temp, gcm_dates = gcm.importGCMvarnearestneighbor_xarray(
-        gcm.temp_fn, gcm.temp_vn, main_glac_rgi, dates_table_full, verbose=debug
+        gcm.temp_fn, gcm.temp_vn, main_glac_rgi, dates_table_full
     )
     ref_temp, ref_dates = ref_gcm.importGCMvarnearestneighbor_xarray(
-        ref_gcm.temp_fn, ref_gcm.temp_vn, main_glac_rgi, dates_table_ref, verbose=debug
+        ref_gcm.temp_fn, ref_gcm.temp_vn, main_glac_rgi, dates_table_ref
     )
     # Precipitation [m]
     gcm_prec, gcm_dates = gcm.importGCMvarnearestneighbor_xarray(
-        gcm.prec_fn, gcm.prec_vn, main_glac_rgi, dates_table_full, verbose=debug
+        gcm.prec_fn, gcm.prec_vn, main_glac_rgi, dates_table_full
     )
     ref_prec, ref_dates = ref_gcm.importGCMvarnearestneighbor_xarray(
-        ref_gcm.prec_fn, ref_gcm.prec_vn, main_glac_rgi, dates_table_ref, verbose=debug
+        ref_gcm.prec_fn, ref_gcm.prec_vn, main_glac_rgi, dates_table_ref
     )
     # Elevation [m asl]
     try:
@@ -548,17 +543,13 @@ def run(list_packed_vars):
         ref_tempstd = np.zeros((main_glac_rgi.shape[0], dates_table_ref.shape[0]))
     elif pygem_prms['mb']['option_ablation'] == 2 and sim_climate_name in ['ERA5']:
         gcm_tempstd, gcm_dates = gcm.importGCMvarnearestneighbor_xarray(
-            gcm.tempstd_fn, gcm.tempstd_vn, main_glac_rgi, dates_table, verbose=debug
+            gcm.tempstd_fn, gcm.tempstd_vn, main_glac_rgi, dates_table
         )
         ref_tempstd = gcm_tempstd
     elif pygem_prms['mb']['option_ablation'] == 2 and args.ref_climate_name in ['ERA5']:
         # Compute temp std based on reference climate data
         ref_tempstd, ref_dates = ref_gcm.importGCMvarnearestneighbor_xarray(
-            ref_gcm.tempstd_fn,
-            ref_gcm.tempstd_vn,
-            main_glac_rgi,
-            dates_table_ref,
-            verbose=debug,
+            ref_gcm.tempstd_fn, ref_gcm.tempstd_vn, main_glac_rgi, dates_table_ref
         )
         # Monthly average from reference climate data
         gcm_tempstd = gcmbiasadj.monthly_avg_array_rolled(
@@ -571,18 +562,13 @@ def run(list_packed_vars):
     # Lapse rate
     if sim_climate_name in ['ERA-Interim', 'ERA5']:
         gcm_lr, gcm_dates = gcm.importGCMvarnearestneighbor_xarray(
-            gcm.lr_fn,
-            gcm.lr_vn,
-            main_glac_rgi,
-            dates_table,
-            upscale_var_timestep=True,
-            verbose=debug,
+            gcm.lr_fn, gcm.lr_vn, main_glac_rgi, dates_table
         )
         ref_lr = gcm_lr
     else:
         # Compute lapse rates based on reference climate data
         ref_lr, ref_dates = ref_gcm.importGCMvarnearestneighbor_xarray(
-            ref_gcm.lr_fn, ref_gcm.lr_vn, main_glac_rgi, dates_table_ref, verbose=debug
+            ref_gcm.lr_fn, ref_gcm.lr_vn, main_glac_rgi, dates_table_ref
         )
         # Monthly average from reference climate data
         gcm_lr = gcmbiasadj.monthly_avg_array_rolled(
@@ -600,9 +586,12 @@ def run(list_packed_vars):
     else:
         nsims = 1
 
-    # Number of years
-    nyears = dates_table.year.unique()[-1] - dates_table.year.unique()[0] + 1
-    nyears_ref = dates_table_ref.year.unique()[-1] - dates_table.year.unique()[0] + 1
+    # Number of years (for OGGM's run_until_and_store)
+    if pygem_prms['time']['timestep'] == 'monthly':
+        nyears = int(dates_table.shape[0] / 12)
+        nyears_ref = int(dates_table_ref.shape[0] / 12)
+    else:
+        assert True == False, 'Adjust nyears for non-monthly timestep'
 
     for glac in range(main_glac_rgi.shape[0]):
         if glac == 0:
@@ -851,9 +840,9 @@ def run(list_packed_vars):
                     if debug:
                         print('cfl number:', cfg.PARAMS['cfl_number'])
 
-                    if args.use_regional_glen_a:
+                    if args.use_reg_glena:
                         glena_df = pd.read_csv(
-                            f'{pygem_prms["root"]}/{pygem_prms["sim"]["oggm_dynamics"]["glen_a_regional_relpath"]}'
+                            f'{pygem_prms["root"]}/{pygem_prms["sim"]["oggm_dynamics"]["glena_reg_relpath"]}'
                         )
                         glena_O1regions = [int(x) for x in glena_df.O1Region.values]
                         assert glacier_rgi_table.O1Region in glena_O1regions, (
@@ -872,20 +861,6 @@ def run(list_packed_vars):
                         glen_a_multiplier = pygem_prms['sim']['oggm_dynamics'][
                             'glen_a_multiplier'
                         ]
-                    glen_a = cfg.PARAMS['glen_a'] * glen_a_multiplier
-
-                    # spinup
-                    if args.spinup:
-                        try:
-                            # see if model_flowlines from spinup exist
-                            nfls = gdir.read_pickle(
-                                'model_flowlines',
-                                filesuffix=f'_dynamic_spinup_pygem_mb_{args.sim_startyear}',
-                            )
-                        except:
-                            raise
-                        glen_a = gdir.get_diagnostics()['inversion_glen_a']
-                        fs = gdir.get_diagnostics()['inversion_fs']
 
                 # Time attributes and values
                 if pygem_prms['climate']['sim_wateryear'] == 'hydro':
@@ -1004,59 +979,65 @@ def run(list_packed_vars):
                         else:
                             inversion_filter = False
 
-                        # run inversion
-                        if not args.spinup:
-                            # Perform inversion based on PyGEM MB using reference directory
-                            mbmod_inv = PyGEMMassBalance(
-                                gdir_ref,
-                                modelprms,
-                                glacier_rgi_table,
-                                fls=fls,
-                                option_areaconstant=True,
-                                inversion_filter=inversion_filter,
+                        # Perform inversion based on PyGEM MB using reference directory
+                        mbmod_inv = PyGEMMassBalance(
+                            gdir_ref,
+                            modelprms,
+                            glacier_rgi_table,
+                            fls=fls,
+                            option_areaconstant=True,
+                            inversion_filter=inversion_filter,
+                        )
+                        #                        if debug:
+                        #                            h, w = gdir.get_inversion_flowline_hw()
+                        #                            mb_t0 = (mbmod_inv.get_annual_mb(h, year=0, fl_id=0, fls=fls) * cfg.SEC_IN_YEAR *
+                        #                                     pygem_prms['constants']['density_ice'] / pygem_prms['constants']['density_water'])
+                        #                            plt.plot(mb_t0, h, '.')
+                        #                            plt.ylabel('Elevation')
+                        #                            plt.xlabel('Mass balance (mwea)')
+                        #                            plt.show()
+
+                        # Non-tidewater glaciers
+                        if (
+                            not gdir.is_tidewater
+                            or not pygem_prms['setup']['include_frontalablation']
+                        ):
+                            # Arbitrariliy shift the MB profile up (or down) until mass balance is zero (equilibrium for inversion)
+                            apparent_mb_from_any_mb(gdir, mb_model=mbmod_inv)
+                            tasks.prepare_for_inversion(gdir)
+                            tasks.mass_conservation_inversion(
+                                gdir,
+                                glen_a=cfg.PARAMS['glen_a'] * glen_a_multiplier,
+                                fs=fs,
                             )
 
-                            # Non-tidewater glaciers
-                            if (
-                                not gdir.is_tidewater
-                                or not pygem_prms['setup']['include_frontalablation']
-                            ):
-                                # Arbitrariliy shift the MB profile up (or down) until mass balance is zero (equilibrium for inversion)
-                                apparent_mb_from_any_mb(gdir, mb_model=mbmod_inv)
-                                tasks.prepare_for_inversion(gdir)
-                                tasks.mass_conservation_inversion(
-                                    gdir,
-                                    glen_a=cfg.PARAMS['glen_a'] * glen_a_multiplier,
-                                    fs=fs,
-                                )
+                        # Tidewater glaciers
+                        else:
+                            cfg.PARAMS['use_kcalving_for_inversion'] = True
+                            cfg.PARAMS['use_kcalving_for_run'] = True
+                            tasks.find_inversion_calving_from_any_mb(
+                                gdir,
+                                mb_model=mbmod_inv,
+                                glen_a=cfg.PARAMS['glen_a'] * glen_a_multiplier,
+                                fs=fs,
+                            )
 
-                            # Tidewater glaciers
-                            else:
-                                cfg.PARAMS['use_kcalving_for_inversion'] = True
-                                cfg.PARAMS['use_kcalving_for_run'] = True
-                                tasks.find_inversion_calving_from_any_mb(
-                                    gdir,
-                                    mb_model=mbmod_inv,
-                                    glen_a=cfg.PARAMS['glen_a'] * glen_a_multiplier,
-                                    fs=fs,
-                                )
+                        # ----- INDENTED TO BE JUST WITH DYNAMICS -----
+                        tasks.init_present_time_glacier(gdir)  # adds bins below
 
-                            # ----- INDENTED TO BE JUST WITH DYNAMICS -----
+                        if not os.path.isfile(gdir.get_filepath('model_flowlines')):
+                            tasks.compute_downstream_line(gdir)
+                            tasks.compute_downstream_bedshape(gdir)
                             tasks.init_present_time_glacier(gdir)  # adds bins below
 
-                            if not os.path.isfile(gdir.get_filepath('model_flowlines')):
-                                tasks.compute_downstream_line(gdir)
-                                tasks.compute_downstream_bedshape(gdir)
-                                tasks.init_present_time_glacier(gdir)  # adds bins below
-
-                            try:
-                                if pygem_prms['mb']['include_debris']:
-                                    debris.debris_binned(
-                                        gdir, fl_str='model_flowlines'
-                                    )  # add debris enhancement factors to flowlines
-                                nfls = gdir.read_pickle('model_flowlines')
-                            except:
-                                raise
+                        try:
+                            if pygem_prms['mb']['include_debris']:
+                                debris.debris_binned(
+                                    gdir, fl_str='model_flowlines'
+                                )  # add debris enhancement factors to flowlines
+                            nfls = gdir.read_pickle('model_flowlines')
+                        except:
+                            raise
 
                         # Water Level
                         # Check that water level is within given bounds
@@ -1324,6 +1305,80 @@ def run(list_packed_vars):
                                         ),
                                     )
 
+                            else:
+                                raise
+
+                    # IGM dynamics
+                    elif args.option_dynamics == 'IGM':            
+                        if debug:
+                            print('IGM DYNAMICS!')
+                        ev_model = IGM_Model2D(
+                            bed=gdir.get_diagnostics().get('bed_topo', None), #FIXME check how to get bed_topo from OGGM gdir
+                            mb_model=mbmod,
+                            y0=args.sim_startyear,
+                            glen_a=cfg.PARAMS['glen_a'] * glen_a_multiplier,
+                            mb_filter=mask, #FIXME the mask of the glacier (2d array)
+                            x=gdir.grid.x, #FIXME check if these make sense
+                            y=gdir.grid.y, #FIXME check if these make sense
+                        )
+
+                        ### FROM instructed_oggm.py
+                        ### # Define IGM model
+                        #sdmodel = IGM_Model2D( bed.data, init_ice_thick=thick.data, dx=gdir.grid.dx,
+                        # mb_model=mb, y0=0, mb_filter=mask, x=ds.x, y=ds.y)
+
+                        # Run the model
+                        # ods = sdmodel.run_until_and_store(100, grid=gdir.grid, print_stdout="My run")
+                        ###
+
+                        if debug:
+                            print('New glacier vol', ev_model.volume_m3)
+                            graphics.plot_modeloutput_section(ev_model)
+                            plt.show()
+                        try:
+                            ## From interface2d.py
+                            # def run_until_and_store(self, ye, step=2, run_path=None, grid=None,
+                            # print_stdout=False, stop_if_border=False):
+                            _, diag = ev_model.run_until_and_store(args.sim_endyear + 1)
+                            #                            print('shape of volume:', ev_model.mb_model.glac_wide_volume_annual.shape, diag.volume_m3.shape)
+                            ev_model.mb_model.glac_wide_volume_annual = (
+                                diag.volume_m3.values
+                            )
+                            ev_model.mb_model.glac_wide_area_annual = (
+                                diag.area_m2.values
+                            )
+                        except RuntimeError as e:
+                            if 'Glacier exceeds domain boundaries' in repr(e):
+                                count_exceed_boundary_errors += 1
+                                successful_run = False
+
+                                # LOG FAILURE
+                                fail_domain_fp = (
+                                    pygem_prms['root']
+                                    + '/Output/simulations/fail-exceed_domain/'
+                                    + reg_str
+                                    + '/'
+                                    + sim_climate_name
+                                    + '/'
+                                )
+                                if sim_climate_name not in [
+                                    'ERA-Interim',
+                                    'ERA5',
+                                    'COAWST',
+                                ]:
+                                    fail_domain_fp += sim_climate_scenario + '/'
+                                if not os.path.exists(fail_domain_fp):
+                                    os.makedirs(fail_domain_fp, exist_ok=True)
+                                txt_fn_fail = glacier_str + '-sim_failed.txt'
+                                with open(
+                                    fail_domain_fp + txt_fn_fail, 'w'
+                                ) as text_file:
+                                    text_file.write(
+                                        glacier_str
+                                        + ' failed to complete '
+                                        + str(count_exceed_boundary_errors)
+                                        + ' simulations'
+                                    )
                             else:
                                 raise
 
