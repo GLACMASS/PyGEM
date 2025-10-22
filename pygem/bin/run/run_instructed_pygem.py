@@ -63,11 +63,16 @@ topo = ds.topo # ice surface elevation
 glacier_rgi_table = config_manager.get_glacier_rgi_table()
 modelprms = config_manager.get_modelprms_glacier(glac_no)
 
+# Get flowlines - needed by PyGEMMassBalance
+fls = gdir.read_pickle('inversion_flowlines') #FIXME need to check if this is correct
+nfls = [fls]  # Put in list as PyGEMMassBalance expects a list of flowlines
+
 # Define SMB model in PyGEM
 mbmod = PyGEMMassBalance(
                          gdir,
                          modelprms,
                          glacier_rgi_table,
+                         fls=nfls,
                          options_areaconstant=False,
                          )
 
@@ -79,6 +84,30 @@ mbmod = PyGEMMassBalance(
                 #         fls=nfls, - #FIXME - Henning: how to handle flowlines? Are they needed by SMB Model?
                 #         option_areaconstant=False,
                 #         )
+
+# From PyGEM's run_simulation.py: 
+# # Henning: is the following code useful for instructed_pygem.py? 
+# # get_annual_mb is used in run_simulation.py to get the annual mass balance for flowlines
+# but get_mb is the method used in interfaced2.py by IGM_Model2D
+                        # # ----- MODEL RUN WITH CONSTANT GLACIER AREA -----
+                        # years = np.arange(args.sim_startyear, args.sim_endyear + 1)
+                        # mb_all = []
+                        # for year in years:
+                        #     mb_annual = mbmod.get_annual_mb(
+                        #         nfls[0].surface_h,
+                        #         fls=nfls,
+                        #         fl_id=0,
+                        #         year=year,
+                        #         debug=True,
+                        #     )
+                        #     mb_mwea = (
+                        #         mb_annual
+                        #         * 365
+                        #         * 24
+                        #         * 3600
+                        #         * pygem_prms['constants']['density_ice']
+                        #         / pygem_prms['constants']['density_water']
+                        #     )
 
 
 
