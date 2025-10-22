@@ -14,11 +14,10 @@ import os
 
 from oggm import cfg, utils # Do we need something from PyGEM's config manager too?
 from oggm.cfg import G, SEC_IN_YEAR, SEC_IN_DAY 
-
 import igm
-from pygem.interface2d import Interface2d #equivalent of oggm.core.sia2d import Model2D
+from pygem.interface2d import Interface2D #equivalent of oggm.core.sia2d import Model2D
 
-class IGM_Model2D(Interface2d):
+class IGM_Model2D(Interface2D):
     """Class to run a 2D simulation of glacier evolution using IGM as ice flow solver."""
     def filter_ice_border(ice_thick):
         """Sets the ice thickness at the border of the domain to zero."""

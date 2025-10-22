@@ -25,7 +25,8 @@ from pygem.instructed_pygem import IGM_Model2D
 
 # instantiate ConfigManager
 config_manager = ConfigManager()
-#config_manager = ConfigManager(base_dir="/uio/hypatia/geofag-felles/projects/glacmass/henning/pygem/PyGEM")
+# config_manager = ConfigManager(base_dir="/uio/hypatia/geofag-felles/projects/glacmass/henning/pygem/PyGEM/pygem")
+
 
 # read the config
 pygem_prms = config_manager.read_config()   # NOTE: ensure that your root path in ~/PyGEM/config.yaml points to
