@@ -34,7 +34,7 @@ rootpath=pygem_prms['root']
 
 
 ### Pick glacier of choice ### (glac_no is the PyGEM variable, rgi_ids is the OGGM variable)
-# glac_no = 08.01126 # Nigardsbreen, Norway
+glac_no = 08.01126 # Nigardsbreen, Norway
 # glac_no = 11.01450 # Great Aletsch, Switzerland
 # glac_no = 11.00897 # Hintereisferner, Austria
 rgi_ids = ["RGI08-01.126"]  # Nigardsbreen
@@ -59,20 +59,31 @@ mask = ds.glacier_mask.data == 1
 topo = ds.topo # ice surface elevation
 
 
-# Define SMB model in PyGEM
-# glac_no = rgi_ids # rename variable for PyGEM
-mbmod = PyGEMMassBalance(glac_no=rgi_ids,
-                           hemi='nh',
-                           use_daily_climate=False,
-                           smb_model_type='linear',
-                           temp_correction=0.0,
-                           precip_scaling=1.0)
+# Get SMB model parameters from PyGEM config
+glacier_rgi_table = config_manager.get_glacier_rgi_table()
+modelprms = config_manager.get_modelprms_glacier(glac_no)
 
+# Define SMB model in PyGEM
+mbmod = PyGEMMassBalance(
+                         gdir,
+                         modelprms,
+                         glacier_rgi_table,
+                         options_areaconstant=False,
+                         )
+
+# From PyGEM's run_simulation.py:
+                #     mbmod = PyGEMMassBalance(
+                #         gdir,
+                #         modelprms,    
+                #         glacier_rgi_table,
+                #         fls=nfls, - #FIXME - Henning: how to handle flowlines? Are they needed by SMB Model?
+                #         option_areaconstant=alse,
+                # mo
 # Time settings
 startyear = 2000
 endyear = 2020
 
-# Define model
+# Define glacier-evolution model
 ev_model = IGM_Model2D(
     bed=bed.data,
     init_ice_thick=thick.data,
