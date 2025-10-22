@@ -77,8 +77,11 @@ mbmod = PyGEMMassBalance(
                 #         modelprms,    
                 #         glacier_rgi_table,
                 #         fls=nfls, - #FIXME - Henning: how to handle flowlines? Are they needed by SMB Model?
-                #         option_areaconstant=alse,
-                # mo
+                #         option_areaconstant=False,
+                #         )
+
+
+
 # Time settings
 startyear = 2000
 endyear = 2020
