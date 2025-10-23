@@ -362,7 +362,7 @@ def run(list_packed_vars):
     """
     # Unpack variables
     parser = getparser()
-    args = parser.parse_args()/
+    args = parser.parse_args()
     count = list_packed_vars[0]
     glac_no = list_packed_vars[1]
     sim_climate_name = list_packed_vars[2]
