@@ -32,10 +32,10 @@ class Interface2D(object):
         init_ice_thick=None,
         dx=None,
         dy=None,
-        mb_model=None, # check what PyGEM uses - I think this is fine, but needs checked  
+        mb_model=None,
         y0=0.0,
         glen_a=None,
-        mb_elev_feedback="annual", #FIXME - do we need this? Needs checked in PyGEM context
+        mb_elev_feedback="annual", #FIXME - PyGEM doesn't use this, but seems OK to keep as a default
         ice_thick_filter=filter_ice_border,
         mb_filter=None, #FIXME - check what PyGEM uses
     ):
