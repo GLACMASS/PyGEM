@@ -1,3 +1,5 @@
+# This script was just copied from our version of IGM/igm/instructed_oggm.py with updated paths on mimi
+
 """
 This class overrides the oggm.core.sia2d.Model2D class to use the ice flow model
 implemented in the IGM package. The ice flow model is called at each time step
@@ -149,8 +151,7 @@ class IGM_Model2D(Model2D):
         # compute effective time step
         dt_use = utils.clip_scalar(np.min([dt_cfl, dt]), 0, self.max_dt)
 
-        # compute the surface mass balance
-        print(self.state.it)
+        # compute the surface mass balance and assign it to the 2D IGM State
         self.state.smb.assign(self.get_mb())
 
         # return the updated ice thickness with oggm-like variable

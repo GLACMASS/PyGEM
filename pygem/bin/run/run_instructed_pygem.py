@@ -7,13 +7,11 @@ Inspired by run_instructed_oggm.py by Julien Jehl, Fabien Maussion, and Guillaum
 
 # general imports
 import os, sys, glob, json
-import matplotlib.pyplot as plt
 import numpy as np
 import xarray as xr
 
 # pygem imports
 # import argparse
-# from pygem.run_simulation import get_parser # needed?
 from pygem.setup.config import ConfigManager
 from pygem.massbalance import PyGEMMassBalance
 from pygem import class_climate, output
@@ -24,37 +22,44 @@ from oggm import cfg, utils, workflow, tasks, shop
 from oggm.cfg import G, SEC_IN_YEAR, SEC_IN_DAY
 from oggm.shop import bedtopo
 
-from oggm.core.flowline import FluxBasedModel, SemiImplicitModel
-
-import pygem.gcmbiasadj as gcmbiasadj
+from oggm.core.flowline import SemiImplicitModel
 
 import pygem.pygem_modelsetup as modelsetup
 from types import SimpleNamespace
 
 from pygem.instructed_pygem import IGM_Model2D
+from pygem.interface2d import create_pseudo_flowline
 
+# Next steps:
+# 1. Get detailed outputs from the simulations and do comparisons
+#   - See write_ncdf module in IGM for storing of IGM.state to netcdf files
+#   - run-function with output flags enabled in OGGM to get detailed output in gdir
+#   -> make sure that there are no inconsistencies
+# 2. Think about Glen_A and Sliding_F in IGM and OGGM
+# 3. Think about different PyGEM calibrations
+# 4. Think about also using monthly OGGM TI model (MB), it should easy to integrate
 
-# from pygem.instructed_pygem import IGM_Model2D
 
 flow_model = "IGM"  # choose either "OGGM" or "IGM"
 
-# toDo: Compare output of "IGM" and "OGGM" options
+climate_data_path = "/uio/hypatia/geofag-felles/projects/glacmass/data/PyGEM_input/climate_data/ERA5/"
+calibration_data_file = "/uio/hypatia/geofag-felles/projects/glacmass/data/PyGEM_input/calibration/11.01450-modelprms_dict.json"
+
+### Pick glacier of choice ###
+# glac_no = 08.01126 # Nigardsbreen, Norway
+glac_no = ["11.01450"]  # Aletsch glacier
+# glac_no = 11.00897 # Hintereisferner, Austria
+
+# Simulation period - be careful about initial thickness date!
+startyear = 1980
+endyear = 2020
 
 
 def main():
-    # PyGEM congig
+    # PyGEM config
     config_manager = ConfigManager(base_dir="/uio/hypatia/geofag-personlig/geohyd-staff/johanmbr/PyGEM")
-    pygem_prms = config_manager.read_config()  # NOTE: ensure that your root path in ~/PyGEM/config.yaml points to
+    pygem_prms = config_manager.read_config()  # NOTE: ensure that your root path in ~/PyGEM/config.yaml points to right dir
     rootpath = pygem_prms["root"]
-
-    ### Pick glacier of choice ### (glac_no is the PyGEM variable)
-    # glac_no = 08.01126 # Nigardsbreen, Norway
-    glac_no = ["15.03733"]  # Great Aletsch, Switzerland
-    # glac_no = 11.00897 # Hintereisferner, Austria
-
-    # Simulation period
-    startyear = 1990
-    endyear = 2010
 
     ### Handle OGGM data paths ###
     cfg.initialize(logging_level="WARNING")
@@ -62,6 +67,7 @@ def main():
     base_url = "https://cluster.klima.uni-bremen.de/~oggm/gdirs/oggm_v1.6/L3-L5_files/2025.1/elev_bands/W5E5_utm/"
     gdirs = workflow.init_glacier_directories(["RGI60-" + glac_no[0]], prepro_base_url=base_url, from_prepro_level=4, prepro_border=80)
     gdir = gdirs[0]
+    bedtopo.add_consensus_thickness(gdir)
 
     # Load rgi_table for PyGEM
     main_glac_rgi = modelsetup.selectglaciersrgitable(glac_no=glac_no)
@@ -69,11 +75,12 @@ def main():
     print(glacier_rgi_table)
 
     # Load a stored calibration for PyGEM
-    with open("/uio/hypatia/geofag-personlig/geohyd-staff/johanmbr/PyGEM/11.01450-modelprms_dict.json", "r") as f:
-        modelprms_dict = json.load(f)
-    modelprms_dict = modelprms_dict["emulator"]
+    # ------ !!! Aletsch Calib !!! ---------------------
+    with open(calibration_data_file, "r") as f:
+        calib_params = json.load(f)
+    calib_params = calib_params["emulator"]
     # Small fix for tsnow_threshold
-    modelprms_dict["tsnow_threshold"] = modelprms_dict["tsnow_threshold"][0]
+    calib_params["tsnow_threshold"] = calib_params["tsnow_threshold"][0]
 
     # Create a PyGEM dates table
     dates_table_ref = modelsetup.datesmodelrun(
@@ -83,52 +90,57 @@ def main():
     )
     gdir.dates_table = dates_table_ref
 
-    # Load PyGEM climate data
-    my_climate_data = load_climate_data_calib("ERA5", gdir.dates_table, main_glac_rgi, pygem_prms)
-    gdir.historical_climate = my_climate_data
+    # Load PyGEM ERA5 climate data
+    climate_data = load_climate_data("ERA5", gdir.dates_table, main_glac_rgi, pygem_prms)
+    gdir.historical_climate = climate_data
 
-    # Get the OGGM flowline - needed by PyGEMMassBalance
     if flow_model == "OGGM":
+        # Get the OGGM flowline - needed by PyGEMMassBalance
+        # Do it on the same thickness field as used in IGM
+        workflow.execute_entity_task(tasks.elevation_band_flowline, gdirs, bin_variables=["consensus_ice_thickness"])
+        workflow.execute_entity_task(tasks.fixed_dx_elevation_band_flowline, gdirs, bin_variables=["consensus_ice_thickness"])
+        tasks.init_present_time_glacier(gdir, use_binned_thickness_data="consensus_ice_thickness")
         fls = gdir.read_pickle("model_flowlines")  # or inversion flowlines?
+
     elif flow_model == "IGM":
-        fls = load_igm_pseudo_flowline(gdir)
+        with xr.open_dataset(gdir.get_filepath("gridded_data")) as ds:
+            ds = ds.load()
+        thick = ds.consensus_ice_thickness.where(~ds.consensus_ice_thickness.isnull(), 0)
+        surface_h = ds.topo
+        fls = create_pseudo_flowline(thick.values, surface_h.values)
+
     else:
         print("Please choose a valid flow model")
         return
 
-    # Create SMB and Ice Flow models
+    # Create SMB model
     mbmod = PyGEMMassBalance(
         gdir,
-        modelprms_dict,
+        calib_params,
         glacier_rgi_table,
         fls=fls,
         fl_id=0,
     )
 
+    # Create Ice flow model and run
     if flow_model == "IGM":
         with xr.open_dataset(gdir.get_filepath("gridded_data")) as ds:
             ds = ds.load()
 
-        # toDo: fix this
+        # Create model like in the run_instructed_oggm.py example from IGM
+        # But use PyGEMMassBalance instead of LinearMassBalance
         thick = ds.consensus_ice_thickness.where(~ds.consensus_ice_thickness.isnull(), 0)
         bed = ds.topo - thick
         mask = ds.glacier_mask.data == 1
-        topo = ds.topo  # ice surface elevation
-
-        sdmodel = IGM_Model2D(bed.data, init_ice_thick=thick.data, dx=gdir.grid.dx, mb_model=mbmod, y0=startyear, mb_filter=mask, x=ds.x, y=ds.y)
+        distributed_ev_model = IGM_Model2D(bed.data, init_ice_thick=thick.data, dx=gdir.grid.dx, mb_model=mbmod, y0=startyear, mb_filter=mask, x=ds.x, y=ds.y)
 
         # Run the model
-        ods = sdmodel.run_until_and_store(endyear, step=1, grid=gdir.grid, print_stdout="My run")
+        igm_simulation_output = distributed_ev_model.run_2D_until_and_store(endyear, run_path=gdir.dir + "/igm_out.nc", step=1, grid=gdir.grid, print_stdout="My run")
+        print(igm_simulation_output.vol)
+        np.savetxt(gdir.dir + "/../IGM_vol_evolution.txt", igm_simulation_output.vol, fmt="%.4f")
 
-        # Store the results
-        for i in range(0, ods.ice_thickness.shape[0], 10):
-            plt.imshow(ods.ice_thickness[i, :])
-            plt.colorbar()
-            plt.savefig(gdir.dir + "/snapshot" + str(i) + ".png")
-            plt.close()
-            print(i)
+    if flow_model == "OGGM":
 
-    else:
         ev_model = SemiImplicitModel(
             fls,
             y0=startyear,
@@ -136,39 +148,20 @@ def main():
         )
 
         # Run the model
-        pygem_simulation = ev_model.run_until_and_store(endyear)
-        print("Num of simulation years: " + str(len(pygem_simulation.volume_m3.values)))
-        print("Volume evolution: " + str(pygem_simulation.volume_m3.values))
-
-    sys.exit()
-
-
-def load_igm_pseudo_flowline(gdir):
-    # Load data from OGGM gdir
-    bedtopo.add_consensus_thickness(gdir)
-
-    with xr.open_dataset(gdir.get_filepath("gridded_data")) as ds:
-        ds = ds.load()
-
-    thick = ds.consensus_ice_thickness.where(~ds.consensus_ice_thickness.isnull(), 0)
-    igm_fls = []
-    igm_fl = {}
-    igm_fls.append(igm_fl)
-    igm_fl["thick"] = thick.values.flatten()
-    igm_fl["surface_h"] = ds.topo.values.flatten()
-    igm_fl["widths_m"] = np.full_like(igm_fl["thick"], 100)
-    igm_fl["dx_meter"] = np.full_like(igm_fl["thick"], 100)
-    igm_fl["section"] = np.full_like(igm_fl["thick"], 100)
-    # igm_fls.width_m = 100
-    igm_fls = dict_to_namespace(igm_fls)
-    return igm_fls
+        oggm_simulation_output = ev_model.run_until_and_store(endyear)
+        print("Num of simulation years: " + str(len(oggm_simulation_output.volume_m3.values)))
+        print("Volume evolution: " + str(oggm_simulation_output.volume_m3.values))
+        np.savetxt(gdir.dir + "/../OGGM_vol_evolution.txt", oggm_simulation_output.volume_m3.values, fmt="%.4f")
 
 
-def load_climate_data_calib(ref_climate_name, dates_table, main_glac_rgi, pygem_prms, debug=False):
+def load_climate_data(ref_climate_name, dates_table, main_glac_rgi, pygem_prms, debug=False):
     # ===== LOAD CLIMATE DATA =====
     # Climate class
     assert ref_climate_name == "ERA5", "Error: Calibration not set up for " + ref_climate_name
     gcm = class_climate.GCM(name=ref_climate_name)
+    gcm.var_fp = climate_data_path
+    gcm.fx_fp = climate_data_path
+
     # Air temperature [degC]
     gcm_temp, gcm_dates = gcm.importGCMvarnearestneighbor_xarray(gcm.temp_fn, gcm.temp_vn, main_glac_rgi, dates_table, verbose=debug)
     if pygem_prms["mb"]["option_ablation"] == 2 and ref_climate_name in ["ERA5"]:
@@ -201,17 +194,6 @@ def load_climate_data_calib(ref_climate_name, dates_table, main_glac_rgi, pygem_
     }
 
     return historical_climate
-
-
-# Helpers
-def dict_to_namespace(obj):
-    """Recursively convert dicts (or list of dicts) to SimpleNamespace objects."""
-    if isinstance(obj, dict):
-        return SimpleNamespace(**{k: dict_to_namespace(v) for k, v in obj.items()})
-    elif isinstance(obj, list):
-        return [dict_to_namespace(v) for v in obj]
-    else:
-        return obj
 
 
 main()
