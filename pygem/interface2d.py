@@ -1,3 +1,10 @@
+"""
+    This class provides an interface to a 2d model in PyGEM,
+    and handles initialization of 2d variables
+    
+    Code written by: Johannes Brunner, Henning Åkesson
+    Based on sia2d.py in OGGM, written by Fabien Maussion
+"""
 import numpy as np
 from numpy import ix_
 import xarray as xr
@@ -27,9 +34,9 @@ class Model2D(object):
         Parameters
         ----------
         bed_topo : 2d array
-            the topography
+            bed topography
         init_ice_thick : 2d array (optional)
-            the initial ice thickness (default is zero everywhere)
+            initial ice thickness (default is zero everywhere)
         dx : float
             map resolution (m)
         dy : float
@@ -56,25 +63,29 @@ class Model2D(object):
         self.mb_model = mb_model
         self.mb_filter = mb_filter
 
-        # Defaults
+        # Set rate factor in Glen's flow law to a default value, if not specified   
         if glen_a is None:
             glen_a = cfg.PARAMS["glen_a"]
         self.glen_a = glen_a
 
+        # Set the grid resolution in y to dx if not specified
         if dy is None:
             dy = dx
 
+        # Initialize grid
         self.dx = dx
         self.dy = dy
-        self.dxdy = dx * dy
+        self.dxdy = dx * dy # calculate area of one grid cell
 
+        # Initialize time
         self.y0 = None
         self.t = None
         self.reset_y0(y0)
 
+        # Ice thickness filter
         self.ice_thick_filter = ice_thick_filter
 
-        # Data
+        # Initialize bed topography, ice thickness and grid dimensions
         self.bed_topo = bed_topo
         self.ice_thick = None
         self.reset_ice_thick(init_ice_thick)
@@ -170,6 +181,7 @@ class Model2D(object):
                 _mb[~self.mb_filter & (_mb > 0)] = 0
             self._mb_current_out = _mb
 
+        # Store current SMB
         return self._mb_current_out
 
     def step(self, dt):
@@ -177,14 +189,31 @@ class Model2D(object):
         raise NotImplementedError
 
     def run_until(self, y1, stop_if_border=False):
-        """Run until a selected year."""
+        """Run until a selected year.
+        Parameters
+        ----------
+        y1 : int
+            the end year (determined within each iteration of the time loop
+            in run_until_and_store) 
+        stop_if_border : bool
+            if True, stop the run if the ice thickness at the border exceeds 10m
+            (default: False)    
+        """
 
+        # calculate the total time to run (in seconds)
         t = (y1 - self.y0) * SEC_IN_YEAR
+
+        # time loop
         while self.t < t:
-            self.step(t - self.t)
+            self.step(t - self.t) # step until the end time
+            # check if the ice thickness at the border exceeds 10m  
             if stop_if_border:
-                if np.any(self.ice_thick[0, :] > 10) or np.any(self.ice_thick[-1, :] > 10) or np.any(self.ice_thick[:, 0] > 10) or np.any(self.ice_thick[:, -1] > 10):
-                    raise RuntimeError("Glacier exceeds boundaries")
+                if (np.any(self.ice_thick[0, :] > 10) or
+                        np.any(self.ice_thick[-1, :] > 10) or
+                        np.any(self.ice_thick[:, 0] > 10) or
+                        np.any(self.ice_thick[:, -1] > 10)):
+                    raise RuntimeError('Glacier exceeds boundaries')
+            # apply ice thickness filter if defined (
             if self.ice_thick_filter is not None:
                 self.ice_thick = self.ice_thick_filter(self.ice_thick)
 
@@ -192,7 +221,8 @@ class Model2D(object):
             raise FloatingPointError("nan in numerical solution.")
 
     def run_until_equilibrium(self, rate=0.001, ystep=5, max_ite=200):
-        """Run until an equilibrium is reached (can take a while)."""
+        """Run until an equilibrium is reached (can take a while.
+        From OGGM sia2d.py - not used in PyGEM now, but could be useful later."""
 
         ite = 0
         was_close_zero = 0
@@ -210,16 +240,44 @@ class Model2D(object):
         if ite > max_ite:
             raise RuntimeError("Did not find equilibrium.")
 
-    def run_2D_until_and_store(self, ye, step=2, run_path=None, grid=None, print_stdout=False, stop_if_border=False):
-        """Run until a selected year and store the output in a NetCDF file."""
+    def run_until_and_store(self, ye, step=2, run_path=None, grid=None,
+                            print_stdout=False, stop_if_border=False):
+        """Run until a selected year and store the output in a NetCDF file.
+        Parameters
+        ----------
+        ye : int
+            the end year
+        step : int
+            how often to store the output (default: every 2 years)
+        run_path : str
+            the path to the NetCDF output file (optional)
+        grid : oggm.core.grid.Grid
+            the OGGM grid to use for the output (optional)
+        print_stdout : str or False
+            if a string is given, print the progress to stdout with this
+            string as a prefix (e.g. 'My run')
+        stop_if_border : bool
+            if True, stop the run if the ice thickness at the border exceeds 10m
+            (default: False)
+        Returns
+        -------
+        run_ds : xarray.Dataset
+            the dataset containing the output
+        """
 
+        # array of years to store the output
         yrs = np.arange(np.floor(self.yr), np.floor(ye) + 1, step)
+
+        # array to store the ice thickness (nyrs,ny,nx)
         out_thick = np.zeros((len(yrs), self.ny, self.nx))
-        out_vol = np.zeros(len(yrs))
+
+        # time loop
         for i, yr in enumerate(yrs):
+            # Progress message every 10 years: max ice thickness
             if print_stdout and (yr / 10) == int(yr / 10):
                 print("{}: year {} of {}, " "max thick {:.1f}m".format(print_stdout, int(yr), int(ye), self.ice_thick.max()), end="\r", flush=True)
             self.run_until(yr, stop_if_border=stop_if_border)
+            # store the ice thickness in the output array
             out_thick[i, :, :] = self.ice_thick
             out_vol[i] = self.volume_km3
 
@@ -230,10 +288,12 @@ class Model2D(object):
 
         run_ds["vol"] = xr.DataArray(out_vol)
 
-        # write output?
+        # write output dataset to netcdf
         if run_path is not None:
+            # remove existing file if it exists
             if os.path.exists(run_path):
                 os.remove(run_path)
+            # save dataset to netcdf
             run_ds.to_netcdf(run_path)
 
         return run_ds
