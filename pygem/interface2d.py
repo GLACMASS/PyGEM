@@ -240,7 +240,7 @@ class Model2D(object):
         if ite > max_ite:
             raise RuntimeError("Did not find equilibrium.")
 
-    def run_until_and_store(self, ye, step=2, run_path=None, grid=None,
+    def run_2D_until_and_store(self, ye, step=2, run_path=None, grid=None,
                             print_stdout=False, stop_if_border=False):
         """Run until a selected year and store the output in a NetCDF file.
         Parameters
@@ -270,6 +270,8 @@ class Model2D(object):
 
         # array to store the ice thickness (nyrs,ny,nx)
         out_thick = np.zeros((len(yrs), self.ny, self.nx))
+        
+        out_vol = np.zeros(len(yrs))
 
         # time loop
         for i, yr in enumerate(yrs):
