@@ -61,8 +61,8 @@ class IGM_Model2D(Model2D):
             mb_elev_feedback=mb_elev_feedback,
             ice_thick_filter=ice_thick_filter,
             mb_filter=mb_filter,
-            sliding_option=sliding_option,
-            out_dir=out_dir,
+            #sliding_option=sliding_option,
+            #out_dir=out_dir,
         )
 
         """
@@ -105,6 +105,7 @@ class IGM_Model2D(Model2D):
         self.y = y
 
         # Disable the training of the iceflow emulator
+        # would it be possible to retrain the emulator during the simulation?
         self.cfg.processes.iceflow.retrain_iceflow_emulator_freq = 0
 
         # Initialize the glacier variables in the IGM model state

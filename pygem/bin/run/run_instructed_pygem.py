@@ -54,13 +54,14 @@ climate_data_path = "/uio/hypatia/geofag-felles/projects/glacmass/data/PyGEM_inp
 calibration_data_file = "/uio/hypatia/geofag-felles/projects/glacmass/data/PyGEM_input/calibration/11.01450-modelprms_dict.json"
 igm_config_file = "/uio/hypatia/geofag-felles/projects/glacmass/henning/igm-examples/instructed_oggm/params.yaml"
 #pygem_config_dir = "/uio/hypatia/geofag-personlig/geohyd-staff/johanmbr/PyGEM"
-pygem_config_dir = "/uio/hypatia/geofag-personlig/geohyd-staff/henninma/pygem/PyGEM"
+pygem_config_dir = "/uio/hypatia/geofag-felles/projects/glacmass/henning/pygem/PyGEM"
 
 # Outputs
 # oggm_out_dir = "/uio/hypatia/geofag-personlig/geohyd-staff/johanmbr/PyGEM/PyGEM-IGM/outputs/OGGM"
 # igm_out_dir = "/uio/hypatia/geofag-personlig/geohyd-staff/johanmbr/PyGEM/PyGEM-IGM/outputs/IGM"
-oggm_out_dir = "/uio/hypatia/geofag-personlig/geohyd-staff/henninma/pygem/PyGEM/PyGEM-IGM/outputs/OGGM"
-igm_out_dir = "/uio/hypatia/geofag-personlig/geohyd-staff/henninma/pygem/PyGEM/PyGEM-IGM/outputs/IGM"
+oggm_out_dir = "/uio/hypatia/geofag-felles/projects/glacmass/henning/pygem/PyGEM/PyGEM-IGM/outputs/OGGM"
+igm_out_dir = "/uio/hypatia/geofag-felles/projects/glacmass/henning/pygem/PyGEM/PyGEM-IGM/outputs/IGM"
+
 
 
 ### Pick glacier of choice ###
