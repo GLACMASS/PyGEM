@@ -25,31 +25,40 @@ from oggm.shop import bedtopo
 from oggm.core.flowline import SemiImplicitModel
 
 import pygem.pygem_modelsetup as modelsetup
-from types import SimpleNamespace
 
 from pygem.instructed_pygem import IGM_Model2D
 from pygem.interface2d import create_pseudo_flowline
 
+# !!! Small change in flowline.py (OGGM) required for storing PyGEM MB output information with OGGM (mb_model_debug_refreeze bool error) !!!
+# Use: if type(v) is bool:
+#         v = str(v)
+#         ds.attrs['mb_model_{}'.format(k)] = v
+
 # Next steps:
-# 1. Get detailed outputs from the simulations and do comparisons
-#   - See write_ncdf module in IGM for storing of IGM.state to netcdf files
-#   - run-function with output flags enabled in OGGM to get detailed output in gdir
-#   -> make sure that there are no inconsistencies
-# 2. Think about Glen_A and Sliding_F in IGM and OGGM
-# - Glen_A:
-#  -> add option to set Glen_A based on PyGEM calibration?
-# - Sliding parameter
+# - Add timeseries output for IGM
+# - Think about Glen_A and Sliding_F in IGM and OGGM
+#   - Glen_A:
+#     -> add option to set Glen_A based on PyGEM calibration?
+#   - Sliding parameter
 #   -> IGM: add possbility to run with spatially variable sliding parameter, either set manually as a function of elevation (Åkesson et al. 2018),
 #     or add capability to run an IGM inversion to get sliding parameter field
-# 3. Think about different PyGEM calibrations
+# Think about different PyGEM calibrations
 #   - make sure it's possible to execute run_calibration within the PyGEM-IGM framework
-# 4. Think about also using monthly OGGM TI model (MB), it should easy to integrate
+# Think about using monthly OGGM TI model (MB), it should easy to integrate
 
 
 flow_model = "IGM"  # choose either "OGGM" or "IGM"
 
+# Inputs and config
 climate_data_path = "/uio/hypatia/geofag-felles/projects/glacmass/data/PyGEM_input/climate_data/ERA5/"
 calibration_data_file = "/uio/hypatia/geofag-felles/projects/glacmass/data/PyGEM_input/calibration/11.01450-modelprms_dict.json"
+igm_config_file = "/uio/hypatia/geofag-felles/projects/glacmass/henning/igm-examples/instructed_oggm/params.yaml"
+pygem_config_dir = "/uio/hypatia/geofag-personlig/geohyd-staff/johanmbr/PyGEM"
+
+# Outputs
+oggm_out_dir = "/uio/hypatia/geofag-personlig/geohyd-staff/johanmbr/PyGEM/PyGEM-IGM/outputs/OGGM"
+igm_out_dir = "/uio/hypatia/geofag-personlig/geohyd-staff/johanmbr/PyGEM/PyGEM-IGM/outputs/IGM"
+
 
 ### Pick glacier of choice ###
 # glac_no = 08.01126 # Nigardsbreen, Norway
@@ -57,14 +66,13 @@ glac_no = ["11.01450"]  # Aletsch glacier
 # glac_no = 11.00897 # Hintereisferner, Austria
 
 # Simulation period - be careful about initial thickness date!
-startyear = 1980
-endyear = 2020
+startyear = 1979
+endyear = 1985
 
 
 def main():
     # PyGEM config
-    # config_manager = ConfigManager(base_dir="/uio/hypatia/geofag-personlig/geohyd-staff/johanmbr/PyGEM")
-    config_manager = ConfigManager(base_dir="/uio/hypatia/geofag-felles/projects/glacmass/henning/pygem/PyGEM")
+    config_manager = ConfigManager(base_dir=pygem_config_dir)
     pygem_prms = config_manager.read_config()  # NOTE: ensure that your root path in ~/PyGEM/config.yaml points to right dir
     rootpath = pygem_prms["root"]
 
@@ -139,12 +147,15 @@ def main():
         thick = ds.consensus_ice_thickness.where(~ds.consensus_ice_thickness.isnull(), 0)
         bed = ds.topo - thick
         mask = ds.glacier_mask.data == 1
-        distributed_ev_model = IGM_Model2D(bed.data, init_ice_thick=thick.data, dx=gdir.grid.dx, mb_model=mbmod, y0=startyear, mb_filter=mask, x=ds.x, y=ds.y)
+        distributed_ev_model = IGM_Model2D(bed.data, init_ice_thick=thick.data, config=igm_config_file, dx=gdir.grid.dx, mb_model=mbmod, y0=startyear, mb_filter=mask, x=ds.x, y=ds.y, out_dir=igm_out_dir)
 
         # Run the model
         igm_simulation_output = distributed_ev_model.run_2D_until_and_store(endyear, run_path=gdir.dir + "/igm_out.nc", step=1, grid=gdir.grid, print_stdout="My run")
         print(igm_simulation_output.vol)
         np.savetxt(gdir.dir + "/../IGM_vol_evolution.txt", igm_simulation_output.vol, fmt="%.4f")
+
+        igm_state_obj = distributed_ev_model.get_state()
+        print(igm_state_obj)
 
     if flow_model == "OGGM":
 
@@ -155,10 +166,7 @@ def main():
         )
 
         # Run the model
-        oggm_simulation_output = ev_model.run_until_and_store(endyear)
-        print("Num of simulation years: " + str(len(oggm_simulation_output.volume_m3.values)))
-        print("Volume evolution: " + str(oggm_simulation_output.volume_m3.values))
-        np.savetxt(gdir.dir + "/../OGGM_vol_evolution.txt", oggm_simulation_output.volume_m3.values, fmt="%.4f")
+        ev_model.run_until_and_store(endyear, fl_diag_path=oggm_out_dir + "/fl_diagnostic.nc", geom_path=oggm_out_dir + "/geom_diagnostic.nc", diag_path=oggm_out_dir + "/diagnostic.nc")
 
 
 def load_climate_data(ref_climate_name, dates_table, main_glac_rgi, pygem_prms, debug=False):
