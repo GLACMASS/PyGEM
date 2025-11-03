@@ -9,10 +9,8 @@ Based on instructed_oggm.py by Julien Jehl, Fabien Maussion, and Guillaume Jouve
 
 import igm.outputs.write_ncdf as igm_write
 
-
 import numpy as np
 import tensorflow as tf
-
 tf.config.experimental.set_memory_growth(tf.config.list_physical_devices("GPU")[0], True)  # Prevent TensorFlow from allocating all GPU memory
 import os
 
@@ -24,9 +22,7 @@ from pygem.interface2d import Model2D
 
 from igm.common.core.src import State
 from igm.common.runner.configuration.utils import EmptyClass
-
 from igm.common.runner.configuration.loader import load_yaml_as_cfg
-
 from igm.utils.gradient.compute_divflux import compute_divflux
 
 
@@ -39,7 +35,22 @@ class IGM_Model2D(Model2D):
         ice_thick[:, -1] = 0
         return ice_thick
 
-    def __init__(self, bed_topo, config, init_ice_thick=None, dx=None, dy=None, mb_model=None, y0=0.0, mb_elev_feedback="annual", ice_thick_filter=filter_ice_border, mb_filter=None, x=None, y=None, out_dir=None):
+    def __init__(self, bed_topo, config, init_ice_thick=None, dx=None, dy=None, mb_model=None, y0=0.0, mb_elev_feedback="annual", ice_thick_filter=filter_ice_border, mb_filter=None, x=None, y=None, out_dir=None, sliding_option="constant"):
+        """
+         Initialize the IGM_Model2D class, which runs glacier evolution simulations
+         using the ice-flow solver from IGM and the mass balance model from PyGEM.
+
+         This class inherits from the Model2D class in PyGEM's interface2d module.
+
+         The constructor initializes the glacier model with the provided bed topography,
+         initial ice thickness, grid resolution, mass balance model, and other parameters.
+         It also sets up the necessary configurations for IGM and initializes the glacier state.
+
+         The ice-flow dynamics are handled by IGM, while the mass balance is computed using
+         the specified PyGEM mass balance model.
+
+         """
+
         super(IGM_Model2D, self).__init__(
             bed_topo,
             init_ice_thick=init_ice_thick,
@@ -50,10 +61,11 @@ class IGM_Model2D(Model2D):
             mb_elev_feedback=mb_elev_feedback,
             ice_thick_filter=ice_thick_filter,
             mb_filter=mb_filter,
+            sliding_option=sliding_option,
+            out_dir=out_dir,
         )
 
         """
-
         Parameters
         ----------    
         bed_topo : bedrock topography (2d array)
@@ -72,6 +84,10 @@ class IGM_Model2D(Model2D):
         ice_thick_filter : function to apply to the ice thickness *after* each time step. (function)
         
         mb_filter : the mask of the glacier (2d array)
+
+        sliding_option : option for the sliding coefficient : 'constant' (default), 'elevation_dependent', 'igm_inversion'
+
+        out_dir : output directory for IGM outputs (str)
         
         """
 
@@ -87,20 +103,44 @@ class IGM_Model2D(Model2D):
         self.dx = dx
         self.x = x
         self.y = y
+
         # Disable the training of the iceflow emulator
         self.cfg.processes.iceflow.retrain_iceflow_emulator_freq = 0
+
         # Initialize the glacier variables in the IGM model state
         self.state.thk = tf.Variable(self.ice_thick)
         self.state.usurf = tf.Variable(self.surface_h)
         self.state.smb = tf.Variable(tf.zeros_like(self.ice_thick))
 
-        # Define ice-flow parameters used in IGM
+        ### Define ice-flow parameters used in IGM
+        # Ice rheology
         self.state.arrhenius = tf.ones_like(self.state.thk) * cfg.PARAMS["glen_a"] * SEC_IN_YEAR * 1e18  # Rate factor in Glen's flow law, Pa^-3 yr^-1
-        sliding_coefficient = 0.045  # Sliding coefficient, default 0.045. Hard-coded for now - add to input parameters in config.yaml later
-        self.state.slidingco = tf.ones_like(self.state.thk) * sliding_coefficient
+
+        if sliding_option == "elevation_dependent":
+            #sliding coefficient scaled with bed elevation (Åkesson et al. 2018 QSR, Eq. 2)
+            beta_max = 1
+            z_bed = self.bed_topo
+            z_low = np.min(z_bed)
+            sliding_coefficient = beta_max * min(max(0, z_bed), z_bed + z_low)/max(z_bed)
+            self.state.slidingco = sliding_coefficient
+            ## WORK IN PROGRESS....
+
+        elif sliding_option == "igm_inversion":
+            # run an IGM inversion to obtain a spatially variable sliding coefficient
+            print("Sliding option 'igm_inversion' is not yet implemented.")
+            return
+
+        elif sliding_option == "constant":
+            # spatially uniform sliding coefficient
+            sliding_coefficient = 0.045  # could be added to input parameters in config.yaml later
+            self.state.slidingco = tf.ones_like(self.state.thk) * sliding_coefficient
+
+        else:
+            print("Please choose a valid sliding option")
+            return  
+
         # Set grid spacing and coordinates
         self.state.dX = tf.ones_like(self.state.thk) * self.dx
-
         self.state.x = tf.constant(self.x)
         self.state.y = tf.constant(self.y)
 
@@ -118,7 +158,6 @@ class IGM_Model2D(Model2D):
     # Time loop
     def step(self, dt):
         # recast glacier variables into igm-like variables
-
         self.state.thk.assign(self.ice_thick)
         self.state.usurf.assign(self.surface_h)
 

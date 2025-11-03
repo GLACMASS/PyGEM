@@ -53,11 +53,14 @@ flow_model = "IGM"  # choose either "OGGM" or "IGM"
 climate_data_path = "/uio/hypatia/geofag-felles/projects/glacmass/data/PyGEM_input/climate_data/ERA5/"
 calibration_data_file = "/uio/hypatia/geofag-felles/projects/glacmass/data/PyGEM_input/calibration/11.01450-modelprms_dict.json"
 igm_config_file = "/uio/hypatia/geofag-felles/projects/glacmass/henning/igm-examples/instructed_oggm/params.yaml"
-pygem_config_dir = "/uio/hypatia/geofag-personlig/geohyd-staff/johanmbr/PyGEM"
+#pygem_config_dir = "/uio/hypatia/geofag-personlig/geohyd-staff/johanmbr/PyGEM"
+pygem_config_dir = "/uio/hypatia/geofag-personlig/geohyd-staff/henninma/pygem/PyGEM"
 
 # Outputs
-oggm_out_dir = "/uio/hypatia/geofag-personlig/geohyd-staff/johanmbr/PyGEM/PyGEM-IGM/outputs/OGGM"
-igm_out_dir = "/uio/hypatia/geofag-personlig/geohyd-staff/johanmbr/PyGEM/PyGEM-IGM/outputs/IGM"
+# oggm_out_dir = "/uio/hypatia/geofag-personlig/geohyd-staff/johanmbr/PyGEM/PyGEM-IGM/outputs/OGGM"
+# igm_out_dir = "/uio/hypatia/geofag-personlig/geohyd-staff/johanmbr/PyGEM/PyGEM-IGM/outputs/IGM"
+oggm_out_dir = "/uio/hypatia/geofag-personlig/geohyd-staff/henninma/pygem/PyGEM/PyGEM-IGM/outputs/OGGM"
+igm_out_dir = "/uio/hypatia/geofag-personlig/geohyd-staff/henninma/pygem/PyGEM/PyGEM-IGM/outputs/IGM"
 
 
 ### Pick glacier of choice ###
@@ -69,6 +72,8 @@ glac_no = ["11.01450"]  # Aletsch glacier
 startyear = 1979
 endyear = 1985
 
+# Set ice-flow options for IGM
+slidingoption = "constant"  # sliding coefficient: 'constant', 'elevation_dependent', 'igm_inversion'
 
 def main():
     # PyGEM config
@@ -147,7 +152,7 @@ def main():
         thick = ds.consensus_ice_thickness.where(~ds.consensus_ice_thickness.isnull(), 0)
         bed = ds.topo - thick
         mask = ds.glacier_mask.data == 1
-        distributed_ev_model = IGM_Model2D(bed.data, init_ice_thick=thick.data, config=igm_config_file, dx=gdir.grid.dx, mb_model=mbmod, y0=startyear, mb_filter=mask, x=ds.x, y=ds.y, out_dir=igm_out_dir)
+        distributed_ev_model = IGM_Model2D(bed.data, init_ice_thick=thick.data, config=igm_config_file, dx=gdir.grid.dx, mb_model=mbmod, y0=startyear, mb_filter=mask, x=ds.x, y=ds.y, out_dir=igm_out_dir, sliding_option=slidingoption)
 
         # Run the model
         igm_simulation_output = distributed_ev_model.run_2D_until_and_store(endyear, run_path=gdir.dir + "/igm_out.nc", step=1, grid=gdir.grid, print_stdout="My run")
