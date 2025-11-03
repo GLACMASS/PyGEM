@@ -36,7 +36,13 @@ from pygem.interface2d import create_pseudo_flowline
 #   - run-function with output flags enabled in OGGM to get detailed output in gdir
 #   -> make sure that there are no inconsistencies
 # 2. Think about Glen_A and Sliding_F in IGM and OGGM
+# - Glen_A:
+#  -> add option to set Glen_A based on PyGEM calibration?
+# - Sliding parameter
+#   -> IGM: add possbility to run with spatially variable sliding parameter, either set manually as a function of elevation (Åkesson et al. 2018),
+#     or add capability to run an IGM inversion to get sliding parameter field
 # 3. Think about different PyGEM calibrations
+#   - make sure it's possible to execute run_calibration within the PyGEM-IGM framework
 # 4. Think about also using monthly OGGM TI model (MB), it should easy to integrate
 
 
@@ -57,7 +63,8 @@ endyear = 2020
 
 def main():
     # PyGEM config
-    config_manager = ConfigManager(base_dir="/uio/hypatia/geofag-personlig/geohyd-staff/johanmbr/PyGEM")
+    # config_manager = ConfigManager(base_dir="/uio/hypatia/geofag-personlig/geohyd-staff/johanmbr/PyGEM")
+    config_manager = ConfigManager(base_dir="/uio/hypatia/geofag-felles/projects/glacmass/henning/pygem/PyGEM")
     pygem_prms = config_manager.read_config()  # NOTE: ensure that your root path in ~/PyGEM/config.yaml points to right dir
     rootpath = pygem_prms["root"]
 
