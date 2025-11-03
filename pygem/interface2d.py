@@ -1,10 +1,11 @@
 """
-    This class provides an interface to a 2d model in PyGEM,
-    and handles initialization of 2d variables
-    
-    Code written by: Johannes Brunner, Henning Åkesson
-    Based on sia2d.py in OGGM, written by Fabien Maussion
+This class provides an interface to a 2d model in PyGEM,
+and handles initialization of 2d variables
+
+Code written by: Johannes Brunner, Henning Åkesson
+Based on sia2d.py in OGGM, written by Fabien Maussion
 """
+
 import numpy as np
 from numpy import ix_
 import xarray as xr
@@ -63,7 +64,7 @@ class Model2D(object):
         self.mb_model = mb_model
         self.mb_filter = mb_filter
 
-        # Set rate factor in Glen's flow law to a default value, if not specified   
+        # Set rate factor in Glen's flow law to a default value, if not specified
         if glen_a is None:
             glen_a = cfg.PARAMS["glen_a"]
         self.glen_a = glen_a
@@ -75,7 +76,7 @@ class Model2D(object):
         # Initialize grid
         self.dx = dx
         self.dy = dy
-        self.dxdy = dx * dy # calculate area of one grid cell
+        self.dxdy = dx * dy  # calculate area of one grid cell
 
         # Initialize time
         self.y0 = None
@@ -165,6 +166,7 @@ class Model2D(object):
             return _mb
 
         date = utils.floatyear_to_date(year)
+        
         if self.mb_elev_feedback == "annual":
             # ignore month changes
             date = (date[0], date[0])
@@ -194,10 +196,10 @@ class Model2D(object):
         ----------
         y1 : int
             the end year (determined within each iteration of the time loop
-            in run_until_and_store) 
+            in run_until_and_store)
         stop_if_border : bool
             if True, stop the run if the ice thickness at the border exceeds 10m
-            (default: False)    
+            (default: False)
         """
 
         # calculate the total time to run (in seconds)
@@ -205,14 +207,11 @@ class Model2D(object):
 
         # time loop
         while self.t < t:
-            self.step(t - self.t) # step until the end time
-            # check if the ice thickness at the border exceeds 10m  
+            self.step(t - self.t)  # step until the end time
+            # check if the ice thickness at the border exceeds 10m
             if stop_if_border:
-                if (np.any(self.ice_thick[0, :] > 10) or
-                        np.any(self.ice_thick[-1, :] > 10) or
-                        np.any(self.ice_thick[:, 0] > 10) or
-                        np.any(self.ice_thick[:, -1] > 10)):
-                    raise RuntimeError('Glacier exceeds boundaries')
+                if np.any(self.ice_thick[0, :] > 10) or np.any(self.ice_thick[-1, :] > 10) or np.any(self.ice_thick[:, 0] > 10) or np.any(self.ice_thick[:, -1] > 10):
+                    raise RuntimeError("Glacier exceeds boundaries")
             # apply ice thickness filter if defined (
             if self.ice_thick_filter is not None:
                 self.ice_thick = self.ice_thick_filter(self.ice_thick)
@@ -240,8 +239,7 @@ class Model2D(object):
         if ite > max_ite:
             raise RuntimeError("Did not find equilibrium.")
 
-    def run_until_and_store(self, ye, step=2, run_path=None, grid=None,
-                            print_stdout=False, stop_if_border=False):
+    def run_2D_until_and_store(self, ye, step=2, run_path=None, grid=None, print_stdout=False, stop_if_border=False):
         """Run until a selected year and store the output in a NetCDF file.
         Parameters
         ----------
@@ -270,6 +268,8 @@ class Model2D(object):
 
         # array to store the ice thickness (nyrs,ny,nx)
         out_thick = np.zeros((len(yrs), self.ny, self.nx))
+
+        out_vol = np.zeros(len(yrs))
 
         # time loop
         for i, yr in enumerate(yrs):

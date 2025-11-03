@@ -1,15 +1,19 @@
 """
-    This class contains methods to run 2D simulations of glacier evolution,
-    using the ice-flow module of IGM as a solver for ice dynamics and ice thickness evolution. 
-    The mass balance model is taken from PyGEM.    
-    
-    Code written by: Henning Åkesson, Johannes Brunner
-    Based on instructed_oggm.py by Julien Jehl, Fabien Maussion, and Guillaume Jouvet 
+This class contains methods to run 2D simulations of glacier evolution,
+using the ice-flow module of IGM as a solver for ice dynamics and ice thickness evolution.
+The mass balance model is taken from PyGEM.
+
+Code written by: Henning Åkesson, Johannes Brunner
+Based on instructed_oggm.py by Julien Jehl, Fabien Maussion, and Guillaume Jouvet
 """
+
+import igm.outputs.write_ncdf as igm_write
+
 
 import numpy as np
 import tensorflow as tf
-tf.config.experimental.set_memory_growth(tf.config.list_physical_devices('GPU')[0], True) #Prevent TensorFlow from allocating all GPU memory
+
+tf.config.experimental.set_memory_growth(tf.config.list_physical_devices("GPU")[0], True)  # Prevent TensorFlow from allocating all GPU memory
 import os
 
 from oggm import cfg, utils
@@ -35,7 +39,7 @@ class IGM_Model2D(Model2D):
         ice_thick[:, -1] = 0
         return ice_thick
 
-    def __init__(self, bed_topo, init_ice_thick=None, dx=None, dy=None, mb_model=None, y0=0.0, mb_elev_feedback="annual", ice_thick_filter=filter_ice_border, mb_filter=None, x=None, y=None):
+    def __init__(self, bed_topo, config, init_ice_thick=None, dx=None, dy=None, mb_model=None, y0=0.0, mb_elev_feedback="annual", ice_thick_filter=filter_ice_border, mb_filter=None, x=None, y=None, out_dir=None):
         super(IGM_Model2D, self).__init__(
             bed_topo,
             init_ice_thick=init_ice_thick,
@@ -73,15 +77,10 @@ class IGM_Model2D(Model2D):
 
         self.state = State()
 
-        self.cfg = EmptyClass()
-        # self.cfg = load_yaml_as_cfg("/uio/hypatia/geofag-personlig/geohyd-staff/johanmbr/repos/PyGEM/pygem/bin/run/igm_test/params.yaml")
-        # self.cfg = load_yaml_as_cfg("/uio/hypatia/geofag-felles/projects/glacmass/henning/pygem/PyGEM/pygem/bin/run/igm_test/params.yaml")
-        self.cfg = load_yaml_as_cfg("/uio/hypatia/geofag-felles/projects/glacmass/henning/igm-examples/instructed_oggm/params.yaml")
-        # self.cfg = load_yaml_as_cfg("/uio/hypatia/geofag-felles/projects/glacmass/henning/igm/igm/conf/processes/iceflow.yaml")
-        # self.cfg = load_yaml_as_cfg("/uio/hypatia/geofag-felles/projects/glacmass/henning/pygem/Output/instructed_pygem/params.yaml")
+        self.cfg = load_yaml_as_cfg(config)
 
         # Parameter
-        self.cfl = 0.25 # hard-coded, could be added to input parameters in config.yaml later
+        self.cfl = 0.25  # hard-coded, could be added to input parameters in config.yaml later
         self.max_dt = SEC_IN_YEAR
 
         # Grid parameters
@@ -95,10 +94,9 @@ class IGM_Model2D(Model2D):
         self.state.usurf = tf.Variable(self.surface_h)
         self.state.smb = tf.Variable(tf.zeros_like(self.ice_thick))
 
-
         # Define ice-flow parameters used in IGM
-        self.state.arrhenius = (tf.ones_like(self.state.thk) * cfg.PARAMS["glen_a"] * SEC_IN_YEAR * 1e18) # Rate factor in Glen's flow law, Pa^-3 yr^-1
-        sliding_coefficient = 0.045 # Sliding coefficient, default 0.045. Hard-coded for now - add to input parameters in config.yaml later
+        self.state.arrhenius = tf.ones_like(self.state.thk) * cfg.PARAMS["glen_a"] * SEC_IN_YEAR * 1e18  # Rate factor in Glen's flow law, Pa^-3 yr^-1
+        sliding_coefficient = 0.045  # Sliding coefficient, default 0.045. Hard-coded for now - add to input parameters in config.yaml later
         self.state.slidingco = tf.ones_like(self.state.thk) * sliding_coefficient
         # Set grid spacing and coordinates
         self.state.dX = tf.ones_like(self.state.thk) * self.dx
@@ -107,11 +105,15 @@ class IGM_Model2D(Model2D):
         self.state.y = tf.constant(self.y)
 
         # Misc
-        self.state.it = -1 # iteration counter
-        self.icemask = mb_filter # glacier mask
+        self.state.it = -1  # iteration counter
+        self.icemask = mb_filter  # glacier mask
 
         # Initialize the ice flow module in IGM
         igm.processes.iceflow.iceflow.initialize(self.cfg, self.state)
+
+        if out_dir != None:
+            self.cfg.outputs.write_ncdf.output_file = out_dir + "/igm_out.nc"
+        igm_write.initialize(self.cfg, self.state)
 
     # Time loop
     def step(self, dt):
@@ -145,13 +147,12 @@ class IGM_Model2D(Model2D):
         )
 
         # compute the maximum possible time step that complies with CFL condition
-        if velomax > 0: # for positive velocities
+        if velomax > 0:  # for positive velocities
             dt_cfl = min(self.cfl * self.dx / velomax, self.max_dt)
-        else: # for non-moving ice
+        else:  # for non-moving ice
             dt_cfl = self.max_dt
 
-        self.state.it += 1 # increment iteration counter
-
+        self.state.it += 1  # increment iteration counter
 
         # compute effective time step
         dt_use = utils.clip_scalar(np.min([dt_cfl, dt]), 0, self.max_dt)
@@ -167,4 +168,20 @@ class IGM_Model2D(Model2D):
         # Compute next time stamp in time loop
         self.t += dt_use
 
+        self.state.saveresult = True
+
+        self.state.t = tf.convert_to_tensor(self.t)
+
+        self.state.dx = self.state.dX
+
+        date = utils.floatyear_to_date(self.yr)
+        date = (date[0], date[0])
+
+        # Write IGM outputs
+        if self._mb_current_date != date or (self._mb_current_out is None):
+            igm_write.run(self.cfg, self.state)
+
         return dt_use
+
+    def get_state(self):
+        return self.state
