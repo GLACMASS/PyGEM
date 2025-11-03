@@ -37,8 +37,14 @@ from pygem.interface2d import create_pseudo_flowline
 # Next steps:
 # - Add timeseries output for IGM
 # - Think about Glen_A and Sliding_F in IGM and OGGM
-# - Think about different PyGEM calibrations
-# - Think about also using monthly OGGM TI model (MB), it should be easy to integrate
+#   - Glen_A:
+#     -> add option to set Glen_A based on PyGEM calibration?
+#   - Sliding parameter
+#   -> IGM: add possbility to run with spatially variable sliding parameter, either set manually as a function of elevation (Åkesson et al. 2018),
+#     or add capability to run an IGM inversion to get sliding parameter field
+# Think about different PyGEM calibrations
+#   - make sure it's possible to execute run_calibration within the PyGEM-IGM framework
+# Think about using monthly OGGM TI model (MB), it should easy to integrate
 
 
 flow_model = "IGM"  # choose either "OGGM" or "IGM"
