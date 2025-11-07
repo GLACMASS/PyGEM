@@ -6,6 +6,7 @@ Inspired by run_instructed_oggm.py by Julien Jehl, Fabien Maussion, and Guillaum
 """
 
 # general imports
+import subprocess
 import os, sys, glob, json
 import numpy as np
 import xarray as xr
@@ -15,7 +16,6 @@ import xarray as xr
 from pygem.setup.config import ConfigManager
 from pygem.massbalance import PyGEMMassBalance
 from pygem import class_climate, output
-
 
 ### imports for oggm and igm
 from oggm import cfg, utils, workflow, tasks, shop
@@ -47,34 +47,37 @@ from pygem.interface2d import create_pseudo_flowline
 # Think about using monthly OGGM TI model (MB), it should easy to integrate
 
 
-flow_model = "IGM"  # choose either "OGGM" or "IGM"
-
-# Inputs and config
-climate_data_path = "/uio/hypatia/geofag-felles/projects/glacmass/data/PyGEM_input/climate_data/ERA5/"
-calibration_data_file = "/uio/hypatia/geofag-felles/projects/glacmass/data/PyGEM_input/calibration/11.01450-modelprms_dict.json"
-igm_config_file = "/uio/hypatia/geofag-felles/projects/glacmass/henning/igm-examples/instructed_oggm/params.yaml"
-#pygem_config_dir = "/uio/hypatia/geofag-personlig/geohyd-staff/johanmbr/PyGEM"
-pygem_config_dir = "/uio/hypatia/geofag-felles/projects/glacmass/henning/pygem/PyGEM"
-
-# Outputs
-# oggm_out_dir = "/uio/hypatia/geofag-personlig/geohyd-staff/johanmbr/PyGEM/PyGEM-IGM/outputs/OGGM"
-# igm_out_dir = "/uio/hypatia/geofag-personlig/geohyd-staff/johanmbr/PyGEM/PyGEM-IGM/outputs/IGM"
-oggm_out_dir = "/uio/hypatia/geofag-felles/projects/glacmass/henning/pygem/PyGEM/PyGEM-IGM/outputs/OGGM"
-igm_out_dir = "/uio/hypatia/geofag-felles/projects/glacmass/henning/pygem/PyGEM/PyGEM-IGM/outputs/IGM"
-
-
-
 ### Pick glacier of choice ###
 # glac_no = 08.01126 # Nigardsbreen, Norway
 glac_no = ["11.01450"]  # Aletsch glacier
 # glac_no = 11.00897 # Hintereisferner, Austria
 
 # Simulation period - be careful about initial thickness date!
-startyear = 1979
-endyear = 1985
+ref_startyear = 1979
+ref_endyear = 1985
 
-# Set ice-flow options for IGM
-slidingoption = "constant"  # sliding coefficient: 'constant', 'elevation_dependent', 'igm_inversion'
+# Ice-flow model options
+flow_model = "IGM"  # choose either "OGGM" or "IGM"
+slidingoption = "constant"  # sliding coefficient for IGM: 'constant', 'elevation_dependent', 'igm_inversion'
+
+# Are we running a calibration? If False, we run a simulation with a stored calibration
+isruncalibration = True
+option_calibration = "HH2015"
+
+# Inputs and config
+climate_data_path = "/uio/hypatia/geofag-felles/projects/glacmass/data/PyGEM_input/climate_data/ERA5/"
+igm_config_file = "/uio/hypatia/geofag-felles/projects/glacmass/henning/igm-examples/instructed_oggm/params.yaml"
+#pygem_config_dir = "/uio/hypatia/geofag-personlig/geohyd-staff/johanmbr/PyGEM"
+pygem_config_dir = "/uio/hypatia/geofag-felles/projects/glacmass/henning/pygem/PyGEM"
+# working_dir = "/uio/hypatia/geofag-felles/projects/glacmass/henning/pygem/PyGEM/PyGEM_input"
+
+
+# Output directories
+# oggm_out_dir = "/uio/hypatia/geofag-personlig/geohyd-staff/johanmbr/PyGEM/PyGEM-IGM/outputs/OGGM"
+# igm_out_dir = "/uio/hypatia/geofag-personlig/geohyd-staff/johanmbr/PyGEM/PyGEM-IGM/outputs/IGM"
+oggm_out_dir = "/uio/hypatia/geofag-felles/projects/glacmass/henning/pygem/PyGEM/PyGEM-IGM/outputs/OGGM"
+igm_out_dir = "/uio/hypatia/geofag-felles/projects/glacmass/henning/pygem/PyGEM/PyGEM-IGM/outputs/IGM"
+
 
 def main():
     # PyGEM config
@@ -82,11 +85,17 @@ def main():
     pygem_prms = config_manager.read_config()  # NOTE: ensure that your root path in ~/PyGEM/config.yaml points to right dir
     rootpath = pygem_prms["root"]
 
+    print(rootpath)
+    working_dir = rootpath + pygem_prms['oggm']['oggm_gdir_relpath']
+    print(working_dir)
+
+
     ### Handle OGGM data paths ###
     cfg.initialize(logging_level="WARNING")
-    cfg.PATHS["working_dir"] = rootpath + "/PyGEM-IGM"
+    cfg.PATHS["working_dir"] = working_dir
     base_url = "https://cluster.klima.uni-bremen.de/~oggm/gdirs/oggm_v1.6/L3-L5_files/2025.1/elev_bands/W5E5_utm/"
     gdirs = workflow.init_glacier_directories(["RGI60-" + glac_no[0]], prepro_base_url=base_url, from_prepro_level=4, prepro_border=80)
+    # gdirs = workflow.init_glacier_directories(working_dir + "RGI60-" + glac_no[0]], prepro_base_url=base_url, from_prepro_level=4, prepro_border=80)
     gdir = gdirs[0]
     bedtopo.add_consensus_thickness(gdir)
 
@@ -94,6 +103,38 @@ def main():
     main_glac_rgi = modelsetup.selectglaciersrgitable(glac_no=glac_no)
     glacier_rgi_table = main_glac_rgi.loc[main_glac_rgi.index.values[0], :]
     print(glacier_rgi_table)
+
+    # Perform calibration, or specify file with stored calibration
+    if isruncalibration == True:
+        print("Running calibration for glacier RGI " + glac_no[0])
+        glac_no_value = float(glac_no[0])  # Extracts the first element and converts it to float
+
+        try:
+            # Call calibration script and pass arguments
+            result = subprocess.run(
+                [sys.executable, 'run_calibration.py', 
+                '-rgi_glac_number', str(glac_no_value), 
+                '-ref_startyear', str(ref_startyear), 
+                '-ref_endyear', str(ref_endyear), 
+                '-option_calibration', option_calibration],
+                check=True, 
+                text=True, 
+                capture_output=True
+            )
+            
+            # Print the output
+            print("Output from run_calibration.py:")
+            print(result.stdout)
+
+        except subprocess.CalledProcessError as e:
+            print("An error occurred while running run_calibration.py:")
+            print(e.stderr)
+
+    # Load stored calibration file
+    else: 
+        calibration_data_file = "/uio/hypatia/geofag-felles/projects/glacmass/data/PyGEM_input/calibration/11.01450-modelprms_dict.json"
+
+
 
     # Load a stored calibration for PyGEM
     # ------ !!! Aletsch Calib !!! ---------------------
@@ -105,8 +146,8 @@ def main():
 
     # Create a PyGEM dates table
     dates_table_ref = modelsetup.datesmodelrun(
-        startyear=startyear,
-        endyear=endyear,
+        startyear=ref_startyear,
+        endyear=ref_endyear,
         option_wateryear=pygem_prms["climate"]["ref_wateryear"],
     )
     gdir.dates_table = dates_table_ref
@@ -153,10 +194,10 @@ def main():
         thick = ds.consensus_ice_thickness.where(~ds.consensus_ice_thickness.isnull(), 0)
         bed = ds.topo - thick
         mask = ds.glacier_mask.data == 1
-        distributed_ev_model = IGM_Model2D(bed.data, init_ice_thick=thick.data, config=igm_config_file, dx=gdir.grid.dx, mb_model=mbmod, y0=startyear, mb_filter=mask, x=ds.x, y=ds.y, out_dir=igm_out_dir, sliding_option=slidingoption)
+        distributed_ev_model = IGM_Model2D(bed.data, init_ice_thick=thick.data, config=igm_config_file, dx=gdir.grid.dx, mb_model=mbmod, y0=ref_startyear, mb_filter=mask, x=ds.x, y=ds.y, out_dir=igm_out_dir, sliding_option=slidingoption)
 
         # Run the model
-        igm_simulation_output = distributed_ev_model.run_2D_until_and_store(endyear, run_path=gdir.dir + "/igm_out.nc", step=1, grid=gdir.grid, print_stdout="My run")
+        igm_simulation_output = distributed_ev_model.run_2D_until_and_store(ref_endyear, run_path=gdir.dir + "/igm_out.nc", step=1, grid=gdir.grid, print_stdout="My run")
         print(igm_simulation_output.vol)
         np.savetxt(gdir.dir + "/../IGM_vol_evolution.txt", igm_simulation_output.vol, fmt="%.4f")
 
@@ -167,12 +208,12 @@ def main():
 
         ev_model = SemiImplicitModel(
             fls,
-            y0=startyear,
+            y0=ref_startyear,
             mb_model=mbmod,
         )
 
         # Run the model
-        ev_model.run_until_and_store(endyear, fl_diag_path=oggm_out_dir + "/fl_diagnostic.nc", geom_path=oggm_out_dir + "/geom_diagnostic.nc", diag_path=oggm_out_dir + "/diagnostic.nc")
+        ev_model.run_until_and_store(ref_endyear, fl_diag_path=oggm_out_dir + "/fl_diagnostic.nc", geom_path=oggm_out_dir + "/geom_diagnostic.nc", diag_path=oggm_out_dir + "/diagnostic.nc")
 
 
 def load_climate_data(ref_climate_name, dates_table, main_glac_rgi, pygem_prms, debug=False):
