@@ -7,6 +7,7 @@ Code written by: Henning Åkesson, Johannes Brunner
 Based on instructed_oggm.py by Julien Jehl, Fabien Maussion, and Guillaume Jouvet
 """
 
+from datetime import datetime
 import igm.outputs.write_ncdf as igm_write
 
 import numpy as np
@@ -128,6 +129,7 @@ class IGM_Model2D(Model2D):
 
         elif sliding_option == "igm_inversion":
             # run an IGM inversion to obtain a spatially variable sliding coefficient
+            #another option is to perform inversion for thickness, before starting time loop
             print("Sliding option 'igm_inversion' is not yet implemented.")
             return
 
@@ -153,7 +155,12 @@ class IGM_Model2D(Model2D):
         igm.processes.iceflow.iceflow.initialize(self.cfg, self.state)
 
         if out_dir != None:
-            self.cfg.outputs.write_ncdf.output_file = out_dir + "/igm_out.nc"
+            current_time = datetime.now().strftime("%Y%m%d_%H%M%S") # get current time, for naming output files
+            self.cfg.outputs.write_ncdf.output_file = out_dir + "/igm_out_" + current_time + ".nc"
+            self.cfg.outputs.write_ncdf.vars_to_save = ['topg', 'usurf', 'thk', 'smb',
+                                                        'velbar_mag', 'velsurf_mag', 'uvelsurf', 'vvelsurf',
+                                                        "divflux","slidingco",
+            ]
         igm_write.initialize(self.cfg, self.state)
 
     # Time loop

@@ -266,10 +266,13 @@ class Model2D(object):
         # array of years to store the output
         yrs = np.arange(np.floor(self.yr), np.floor(ye) + 1, step)
 
-        # array to store the ice thickness (nyrs,ny,nx)
+        # arrays to store the model output (nyrs,ny,nx)
         out_thick = np.zeros((len(yrs), self.ny, self.nx))
-
+        out_usurf = np.zeros((len(yrs), self.ny, self.nx))
+        #out_smb = np.zeros((len(yrs), self.ny, self.nx))
+        out_velsurf_mag = np.zeros((len(yrs), self.ny, self.nx))
         out_vol = np.zeros(len(yrs))
+        out_area = np.zeros(len(yrs))
 
         # time loop
         for i, yr in enumerate(yrs):
@@ -277,16 +280,22 @@ class Model2D(object):
             if print_stdout and (yr / 10) == int(yr / 10):
                 print("{}: year {} of {}, " "max thick {:.1f}m".format(print_stdout, int(yr), int(ye), self.ice_thick.max()), end="\r", flush=True)
             self.run_until(yr, stop_if_border=stop_if_border)
-            # store the ice thickness in the output array
+            # store the model variables in the output arrays
             out_thick[i, :, :] = self.ice_thick
+            # out_usurf[i, :, :] = self.surface_h
+            #out_velsurf_mag[i, :, :] = self.velsurf_mag
+            #out_smb[i, :, :] = self.smb
             out_vol[i] = self.volume_km3
+            out_area[i] = self.area_km2
 
         run_ds = grid.to_dataset() if grid else xr.Dataset()
         run_ds["ice_thickness"] = xr.DataArray(out_thick, dims=["time", "y", "x"], coords={"time": yrs})
-
+        # run_ds["usurf"] = xr.DataArray(out_usurf, dims=["time", "y", "x"], coords={"time": yrs})
+        #run_ds["velsurf_mag"] = xr.DataArray(out_velsurf_mag, dims=["time", "y", "x"], coords={"time": yrs})
+        # run_ds["smb"] = xr.DataArray(out_smb, dims=["time", "y", "x"], coords={"time": yrs})
         run_ds["bed_topo"] = xr.DataArray(self.bed_topo, dims=["y", "x"])
-
-        run_ds["vol"] = xr.DataArray(out_vol)
+        run_ds["vol"] = xr.DataArray(out_vol, dims=["time"], coords={"time": yrs})
+        # run_ds["area"] = xr.DataArray(out_area, dims=["time"], coords={"time": yrs})
 
         # write output dataset to netcdf
         if run_path is not None:

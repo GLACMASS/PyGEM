@@ -45,7 +45,7 @@ from pygem.interface2d import create_pseudo_flowline
 #   -> IGM: add possbility to run with spatially variable sliding parameter, either set manually as a function of elevation (Åkesson et al. 2018),
 #     or add capability to run an IGM inversion to get sliding parameter field
 # Think about different PyGEM calibrations
-#   - make sure it's possible to execute run_calibration within the PyGEM-IGM framework
+
 # Think about using monthly OGGM TI model (MB), it should easy to integrate
 
 
@@ -58,14 +58,14 @@ glac_no = ["11.01450"]  # Aletsch glacier
 
 # Simulation period - be careful about initial thickness date!
 ref_startyear = 2000
-ref_endyear = 2019
+ref_endyear = 2010
 
 # Ice-flow model options
 flow_model = "IGM"  # choose either "OGGM" or "IGM"
 slidingoption = "constant"  # sliding coefficient for IGM: 'constant', 'elevation_dependent', 'igm_inversion'
 
 # SMB calibration options
-isruncalibration = True # True: run a calibration. False: use SMB parameter values a stored calibration
+isruncalibration = False # True: run a calibration. False: use SMB parameter values a stored calibration
 option_calibration = "HH2015"
 
 # Data options
@@ -223,9 +223,9 @@ def main():
 
         # Run the model
         current_time = datetime.now().strftime("%Y%m%d_%H%M%S") # get current time, for naming output files
-        igm_simulation_output = distributed_ev_model.run_2D_until_and_store(ref_endyear, run_path=igm_out_dir + f"/igm_out_{current_time}.nc", step=1, grid=gdir.grid, print_stdout="My run")
+        igm_simulation_output = distributed_ev_model.run_2D_until_and_store(ref_endyear, run_path=None, step=1, grid=gdir.grid, print_stdout="My run")
+        # igm_simulation_output = distributed_ev_model.run_2D_until_and_store(ref_endyear, run_path=igm_out_dir + f"/igm_out_{current_time}.nc", step=1, grid=gdir.grid, print_stdout="My run")
         print(igm_simulation_output.vol)
-        print(igm_out_dir + f"/IGM_vol_evolution_{current_time}.txt")
         np.savetxt(igm_out_dir + f"/IGM_vol_evolution_{current_time}.txt", igm_simulation_output.vol, fmt="%.4f")
         # np.savetxt(gdir.dir + "/../IGM_vol_evolution.txt", igm_simulation_output.vol, fmt="%.4f")
 
