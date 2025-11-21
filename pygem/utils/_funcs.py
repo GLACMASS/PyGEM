@@ -12,6 +12,7 @@ import argparse
 import json
 
 import numpy as np
+import pandas as pd
 from scipy.interpolate import interp1d
 
 from pygem.setup.config import ConfigManager
@@ -41,6 +42,49 @@ def str2bool(v):
         raise argparse.ArgumentTypeError('Boolean value expected.')
 
 
+def parse_period(period_str, date_format=None, delimiter=None):
+    """
+    parse a period string (e.g. '2000-01-01_2001-01-01') into two datetimes.
+    requires a user-specified date_format (e.g. 'YYYY-MM-DD').
+
+    Parameters
+    ----------
+    period_str : str
+        period string to parse
+    date_format : str, optional
+        the date format to use for parsing (default: None, i.e., try to infer automatically)
+    delimiter : str, optional
+        the delimiter to use for splitting the period string (default: None, i.e., try common delimiters)
+    Returns
+    -------
+    t1, t2 : pd.Timestamp
+        the two parsed datetimes
+    """
+
+    if not date_format:
+        raise ValueError("Period date_format must be provided (e.g. 'YYYY-MM-DD').")
+    if not delimiter:
+        raise ValueError("Period delimiter must be provided (e.g. '_').")
+
+    # split and validate
+    parts = [p.strip() for p in period_str.split(delimiter)]
+    if len(parts) != 2:
+        raise ValueError(f"Could not split '{period_str}' into two valid dates using '{delimiter}'.")
+
+    # parse both parts
+    try:
+        t1 = pd.to_datetime(parts[0], format=date_format)
+        t2 = pd.to_datetime(parts[1], format=date_format)
+    except Exception as e:
+        raise ValueError(f"Failed to parse '{period_str}' with format '{date_format}'") from e
+
+    # ensure t2 > t1
+    if t2 <= t1:
+        raise ValueError(f"Invalid period '{period_str}': t2 ({t2.date()}) must be later than t1 ({t1.date()}).")
+
+    return t1, t2
+
+
 def annualweightedmean_array(var, dates_table):
     """
     Calculate annual mean of variable according to the timestep.
@@ -52,14 +96,14 @@ def annualweightedmean_array(var, dates_table):
     var : np.ndarray
         Variable with monthly or daily timestep
     dates_table : pd.DataFrame
-        Table of dates, year, month, daysinmonth, wateryear, and season for each timestep
+        Table of dates, year, month, days_in_step, wateryear, and season for each timestep
     Returns
     -------
     var_annual : np.ndarray
         Annual weighted mean of variable
     """
     if pygem_prms['time']['timestep'] == 'monthly':
-        dayspermonth = dates_table['daysinmonth'].values.reshape(-1, 12)
+        dayspermonth = dates_table['days_in_step'].values.reshape(-1, 12)
         #  creates matrix (rows-years, columns-months) of the number of days per month
         daysperyear = dayspermonth.sum(axis=1)
         #  creates an array of the days per year (includes leap years)
@@ -76,10 +120,10 @@ def annualweightedmean_array(var, dates_table):
         if var_annual.shape[1] == 1:
             var_annual = var_annual.reshape(var_annual.shape[0])
     elif pygem_prms['time']['timestep'] == 'daily':
-        print(
-            '\nError: need to code the groupbyyearsum and groupbyyearmean for daily timestep.Exiting the model run.\n'
-        )
-        exit()
+        var_annual = var.mean(1)
+    else:
+        # var_annual = var.mean(1)
+        assert 1 == 0, 'add this functionality for weighting that is not monthly or daily'
     return var_annual
 
 

@@ -249,17 +249,22 @@ def reg_calving_flux(
                     pygem_prms['root'] + pygem_prms['sim']['oggm_dynamics']['glen_a_regional_relpath']
                 )
                 glena_idx = np.where(glena_df.O1Region == glacier_rgi_table.O1Region)[0][0]
-                glen_a_multiplier = glena_df.loc[glena_idx, 'glens_a_multiplier']
-                fs = glena_df.loc[glena_idx, 'fs']
+                # Check which columns exist
+                # Rounce et al. (2023) regional glen a calibration file has 'glens_a_multiplier' and 'fs'
+                # output of run_inversion has 'inversion_glen)a' and 'inversion_fs'
+                if {'glens_a_multiplier', 'fs'}.issubset(glena_df.columns):
+                    glen_a = cfg.PARAMS['glen_a'] * glena_df.loc[glena_idx, 'glens_a_multiplier']
+                    fs = glena_df.loc[glena_idx, 'fs']
+                elif {'inversion_glen_a', 'inversion_fs'}.issubset(glena_df.columns):
+                    glen_a = glena_df.loc[glena_idx, 'inversion_glen_a']
+                    fs = glena_df.loc[glena_idx, 'inversion_fs']
             else:
                 fs = pygem_prms['sim']['oggm_dynamics']['fs']
-                glen_a_multiplier = pygem_prms['sim']['oggm_dynamics']['glen_a_multiplier']
+                glen_a = cfg.PARAMS['glen_a'] * pygem_prms['sim']['oggm_dynamics']['glen_a_multiplier']
 
-            # CFL number (may use different values for calving to prevent errors)
-            if glacier_rgi_table['TermType'] not in [1, 5] or not pygem_prms['setup']['include_frontalablation']:
-                cfg.PARAMS['cfl_number'] = pygem_prms['sim']['oggm_dynamics']['cfl_number']
-            else:
-                cfg.PARAMS['cfl_number'] = pygem_prms['sim']['oggm_dynamics']['cfl_number_calving']
+            # CFL params
+            cfg.PARAMS['cfl_number'] = pygem_prms['sim']['oggm_dynamics']['cfl_number']
+            cfg.PARAMS['cfl_min_dt'] = pygem_prms['sim']['oggm_dynamics']['cfl_min_dt']
 
             # ----- Mass balance model for ice thickness inversion using OGGM -----
             mbmod_inv = PyGEMMassBalance(
@@ -284,12 +289,12 @@ def reg_calving_flux(
             if invert_standard:
                 apparent_mb_from_any_mb(gdir, mb_model=mbmod_inv)
                 tasks.prepare_for_inversion(gdir)
-                tasks.mass_conservation_inversion(gdir, glen_a=cfg.PARAMS['glen_a'] * glen_a_multiplier, fs=fs)
+                tasks.mass_conservation_inversion(gdir, glen_a=glen_a, fs=fs)
             else:
                 tasks.find_inversion_calving_from_any_mb(
                     gdir,
                     mb_model=mbmod_inv,
-                    glen_a=cfg.PARAMS['glen_a'] * glen_a_multiplier,
+                    glen_a=glen_a,
                     fs=fs,
                 )
 
@@ -310,7 +315,7 @@ def reg_calving_flux(
                 nfls,
                 y0=args.ref_startyear,
                 mb_model=mbmod,
-                glen_a=cfg.PARAMS['glen_a'] * glen_a_multiplier,
+                glen_a=glen_a,
                 fs=fs,
                 is_tidewater=gdir.is_tidewater,
                 water_level=water_level,
@@ -374,7 +379,7 @@ def reg_calving_flux(
                             'OGGM dynamics, calving_k:',
                             np.round(calving_k, 4),
                             'glen_a:',
-                            np.round(glen_a_multiplier, 2),
+                            np.round(glen_a, 2),
                         )
                         print(
                             '    calving front thickness [m]:',
@@ -394,7 +399,7 @@ def reg_calving_flux(
                         nfls,
                         mb_model=mbmod,
                         y0=args.ref_startyear,
-                        glen_a=cfg.PARAMS['glen_a'] * glen_a_multiplier,
+                        glen_a=glen_a,
                         fs=fs,
                         is_tidewater=gdir.is_tidewater,
                         water_level=water_level,
@@ -450,7 +455,7 @@ def reg_calving_flux(
                             'Mass Redistribution curve, calving_k:',
                             np.round(calving_k, 1),
                             'glen_a:',
-                            np.round(glen_a_multiplier, 2),
+                            np.round(glen_a, 2),
                         )
                         print(
                             '    calving front thickness [m]:',
@@ -873,13 +878,13 @@ def calib_ind_calving_k(
     frontalablation_fp='',
     frontalablation_fn='',
     output_fp='',
-    hugonnet2021_fp='',
+    massbalance_fp='',
 ):
     verbose = args.verbose
     overwrite = args.overwrite
     # Load calving glacier data
     fa_glac_data = pd.read_csv(frontalablation_fp + frontalablation_fn)
-    mb_data = pd.read_csv(hugonnet2021_fp)
+    mb_data = pd.read_csv(massbalance_fp)
     fa_glac_data['O1Region'] = [int(x.split('-')[1].split('.')[0]) for x in fa_glac_data.RGIId.values]
 
     calving_k_bndhigh_set = np.copy(calving_k_bndhigh_gl)
@@ -2413,8 +2418,8 @@ def update_mbdata(
     regions=list(range(1, 20)),
     frontalablation_fp='',
     frontalablation_fn='',
-    hugonnet2021_fp='',
-    hugonnet2021_facorr_fp='',
+    massbalance_fp='',
+    massbalance_facorr_fp='',
     ncores=1,
     overwrite=False,
     verbose=False,
@@ -2425,13 +2430,13 @@ def update_mbdata(
     )
     fa_glac_data = pd.read_csv(frontalablation_fp + frontalablation_fn)
     # check if fa corrected mass balance data already exists
-    if os.path.exists(hugonnet2021_facorr_fp):
+    if os.path.exists(massbalance_facorr_fp):
         assert overwrite, (
-            f'Frontal ablation corrected mass balance dataset already exists!\t{hugonnet2021_facorr_fp}\nPass `-o` to overwrite, or pass a different filename for `hugonnet2021_facorrected_fn`'
+            f'Frontal ablation corrected mass balance dataset already exists!\t{massbalance_facorr_fp}\nPass `-o` to overwrite, or pass a different filename for `massbalance_facorrected_fn`'
         )
-        mb_data = pd.read_csv(hugonnet2021_facorr_fp)
+        mb_data = pd.read_csv(massbalance_facorr_fp)
     else:
-        mb_data = pd.read_csv(hugonnet2021_fp)
+        mb_data = pd.read_csv(massbalance_fp)
     mb_rgiids = list(mb_data.rgiid)
 
     # Record prior data
@@ -2461,7 +2466,7 @@ def update_mbdata(
                 )
 
     # Export the updated dataset
-    mb_data.to_csv(hugonnet2021_facorr_fp, index=False)
+    mb_data.to_csv(massbalance_facorr_fp, index=False)
 
     # Update gdirs
     glac_strs = []
@@ -2701,18 +2706,18 @@ def main():
         help='reference period ending year for calibration (typically 2019)',
     )
     parser.add_argument(
-        '-hugonnet2021_fn',
+        '-massbalance_fn',
         action='store',
         type=str,
-        default=f'{pygem_prms["calib"]["data"]["massbalance"]["hugonnet2021_fn"]}',
-        help='reference mass balance data file name (default: df_pergla_global_20yr-filled.csv)',
+        default=f'{pygem_prms["calib"]["data"]["massbalance"]["massbalance_fn"]}',
+        help='reference mass balance data file name (default taken from config.yaml)',
     )
     parser.add_argument(
-        '-hugonnet2021_facorrected_fn',
+        '-massbalance_facorrected_fn',
         action='store',
         type=str,
-        default=f'{pygem_prms["calib"]["data"]["massbalance"]["hugonnet2021_facorrected_fn"]}',
-        help='reference mass balance data file name (default: df_pergla_global_20yr-filled.csv)',
+        default=f'{pygem_prms["calib"]["data"]["massbalance"]["massbalance_facorrected_fn"]}',
+        help='reference mass balance data file name (default taken from config.yaml)',
     )
     parser.add_argument(
         '-ncores',
@@ -2748,8 +2753,8 @@ def main():
     )
     frontalablation_cal_fn = pygem_prms['calib']['data']['frontalablation']['frontalablation_cal_fn']
     output_fp = frontalablation_fp + '/analysis/'
-    hugonnet2021_fp = f'{pygem_prms["root"]}/{pygem_prms["calib"]["data"]["massbalance"]["hugonnet2021_relpath"]}/{args.hugonnet2021_fn}'
-    hugonnet2021_facorr_fp = f'{pygem_prms["root"]}/{pygem_prms["calib"]["data"]["massbalance"]["hugonnet2021_relpath"]}/{args.hugonnet2021_facorrected_fn}'
+    massbalance_fp = f'{pygem_prms["root"]}/{pygem_prms["calib"]["data"]["massbalance"]["massbalance_relpath"]}/{args.massbalance_fn}'
+    massbalance_facorr_fp = f'{pygem_prms["root"]}/{pygem_prms["calib"]["data"]["massbalance"]["massbalance_relpath"]}/{args.massbalance_facorrected_fn}'
     os.makedirs(output_fp, exist_ok=True)
 
     # marge input calving datasets
@@ -2766,7 +2771,7 @@ def main():
         frontalablation_fp=frontalablation_fp,
         frontalablation_fn=merged_calving_data_fn,
         output_fp=output_fp,
-        hugonnet2021_fp=hugonnet2021_fp,
+        massbalance_fp=massbalance_fp,
     )
     with multiprocessing.Pool(args.ncores) as p:
         p.map(calib_ind_calving_k_partial, args.rgi_region01)
@@ -2784,8 +2789,8 @@ def main():
         regions=args.rgi_region01,
         frontalablation_fp=output_fp,
         frontalablation_fn=frontalablation_cal_fn,
-        hugonnet2021_fp=hugonnet2021_fp,
-        hugonnet2021_facorr_fp=hugonnet2021_facorr_fp,
+        massbalance_fp=massbalance_fp,
+        massbalance_facorr_fp=massbalance_facorr_fp,
         ncores=args.ncores,
         overwrite=args.overwrite,
         verbose=args.verbose,

@@ -9,6 +9,7 @@ Based on instructed_oggm.py by Julien Jehl, Fabien Maussion, and Guillaume Jouve
 
 from datetime import datetime
 import igm.outputs.write_ncdf as igm_write
+import igm.outputs.write_ts as igm_write_ts
 
 import numpy as np
 import tensorflow as tf
@@ -156,12 +157,15 @@ class IGM_Model2D(Model2D):
 
         if out_dir != None:
             current_time = datetime.now().strftime("%Y%m%d_%H%M%S") # get current time, for naming output files
+            # self.cfg.outputs.write_ncdf.output_file = out_dir + "/igm_out.nc"
             self.cfg.outputs.write_ncdf.output_file = out_dir + "/igm_out_" + current_time + ".nc"
             self.cfg.outputs.write_ncdf.vars_to_save = ['topg', 'usurf', 'thk', 'smb',
                                                         'velbar_mag', 'velsurf_mag', 'uvelsurf', 'vvelsurf',
                                                         "divflux","slidingco",
             ]
+            self.cfg.outputs.write_ts.output_file = out_dir + "/igm_out_ts_" + current_time + ".nc"
         igm_write.initialize(self.cfg, self.state)
+        igm_write_ts.initialize(self.cfg, self.state)
 
     # Time loop
     def step(self, dt):
@@ -224,9 +228,12 @@ class IGM_Model2D(Model2D):
         date = utils.floatyear_to_date(self.yr)
         date = (date[0], date[0])
 
+        self.state.vol = self.volume_m3
+
         # Write IGM outputs
         if self._mb_current_date != date or (self._mb_current_out is None):
             igm_write.run(self.cfg, self.state)
+            igm_write_ts.run(self.cfg, self.state)
 
         return dt_use
 
