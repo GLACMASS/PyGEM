@@ -142,7 +142,7 @@ class IGM_Model2D(Model2D):
 
         elif sliding_option == "constant":
             # spatially uniform sliding coefficient
-            sliding_coefficient = 0.00001  # default: 0.045. Should be added to input parameters in config.yaml later
+            sliding_coefficient = 0.045  # default: 0.045. Should be added to input parameters in config.yaml later
             self.state.slidingco = tf.ones_like(self.state.thk) * sliding_coefficient
             print("Using constant sliding coefficient: ", sliding_coefficient)
 

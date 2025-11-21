@@ -51,8 +51,8 @@ from pygem.interface2d import create_pseudo_flowline
 
 ### Pick glacier of choice ###
 #glac_no = ["08.01126"]  # Nigardsbreen, Norway
-#glac_no = ["08.00312"]  # Storbreen, Norway
-glac_no = ["11.01450"]  # Aletsch glacier
+glac_no = ["08.00312"]  # Storbreen, Norway
+#glac_no = ["11.01450"]  # Aletsch glacier
 #glac_no = ["11.00897"] # Hintereisferner, Austria
 
 #glac_no = ["RGI2000-v7.0-C-11-01450"]  # Aletsch glacier
@@ -68,7 +68,7 @@ flow_model = "IGM"  # choose either "OGGM" or "IGM"
 slidingoption = "constant"  # sliding coefficient for IGM: 'constant', 'elevation_dependent', 'igm_inversion'
 
 # SMB calibration options
-isruncalibration = False # True: run a calibration. False: use SMB parameter values a stored calibration
+isruncalibration = True # True: run a calibration. False: use SMB parameter values a stored calibration
 option_calibration = "HH2015"
 
 # Data options
