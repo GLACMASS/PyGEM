@@ -68,7 +68,7 @@ flow_model = "IGM"  # choose either "OGGM" or "IGM"
 slidingoption = "constant"  # sliding coefficient for IGM: 'constant', 'elevation_dependent', 'igm_inversion'
 
 # SMB calibration options
-isruncalibration = True # True: run a calibration. False: use SMB parameter values a stored calibration
+isruncalibration = False # True: run a calibration. False: use SMB parameter values a stored calibration
 option_calibration = "HH2015"
 
 # Data options
@@ -229,11 +229,10 @@ def main():
         igm_simulation_output = distributed_ev_model.run_2D_until_and_store(ref_endyear, run_path=None, step=1, grid=gdir.grid, print_stdout="My run")
         # igm_simulation_output = distributed_ev_model.run_2D_until_and_store(ref_endyear, run_path=igm_out_dir + f"/igm_out_{current_time}.nc", step=1, grid=gdir.grid, print_stdout="My run")
         print(igm_simulation_output.vol)
-        np.savetxt(igm_out_dir + f"/IGM_vol_evolution_{current_time}.txt", igm_simulation_output.vol, fmt="%.4f")
-        # np.savetxt(gdir.dir + "/../IGM_vol_evolution.txt", igm_simulation_output.vol, fmt="%.4f")
+        # np.savetxt(igm_out_dir + f"/IGM_vol_evolution_{current_time}.txt", igm_simulation_output.vol, fmt="%.4f")
 
         igm_state_obj = distributed_ev_model.get_state()
-        print(igm_state_obj)
+        # print(igm_state_obj)
 
     if flow_model == "OGGM":
         # Create evoution model

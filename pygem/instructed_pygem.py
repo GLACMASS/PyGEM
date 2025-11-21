@@ -117,7 +117,12 @@ class IGM_Model2D(Model2D):
 
         ### Define ice-flow parameters used in IGM
         # Ice rheology
-        self.state.arrhenius = tf.ones_like(self.state.thk) * cfg.PARAMS["glen_a"] * SEC_IN_YEAR * 1e18  # Rate factor in Glen's flow law, Pa^-3 yr^-1
+        #arrhenius_factor = cfg.PARAMS["glen_a"] * SEC_IN_YEAR * 1e18  # Rate factor in Glen's flow law, MPa^-3 yr^-1
+        arrhenius_factor = 78  # Default = 78 from IGM, MPa^-3 yr^-1 - #FIXME should be added to input parameters in config.yaml later?
+        self.state.arrhenius = tf.ones_like(self.state.thk) * arrhenius_factor
+        print("Using Arrhenius factor (Glen's A): ", arrhenius_factor, " MPa^-3 s^-1")
+        print("Using Arrhenius factor (Glen's A): ", arrhenius_factor / SEC_IN_YEAR / 1e18, " Pa^-3 s^-1")
+
 
         if sliding_option == "elevation_dependent":
             #sliding coefficient scaled with bed elevation (Åkesson et al. 2018 QSR, Eq. 2)
@@ -126,7 +131,8 @@ class IGM_Model2D(Model2D):
             z_low = np.min(z_bed)
             sliding_coefficient = beta_max * min(max(0, z_bed), z_bed + z_low)/max(z_bed)
             self.state.slidingco = sliding_coefficient
-            ## WORK IN PROGRESS....
+            ##FIXME WORK IN PROGRESS...., not tested yet
+            print("Using elevation-dependent sliding coefficient.")
 
         elif sliding_option == "igm_inversion":
             # run an IGM inversion to obtain a spatially variable sliding coefficient
@@ -138,6 +144,7 @@ class IGM_Model2D(Model2D):
             # spatially uniform sliding coefficient
             sliding_coefficient = 0.00001  # default: 0.045. Should be added to input parameters in config.yaml later
             self.state.slidingco = tf.ones_like(self.state.thk) * sliding_coefficient
+            print("Using constant sliding coefficient: ", sliding_coefficient)
 
         else:
             print("Please choose a valid sliding option")
