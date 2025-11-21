@@ -8,6 +8,7 @@ Based on instructed_oggm.py by Julien Jehl, Fabien Maussion, and Guillaume Jouve
 """
 
 import igm.outputs.write_ncdf as igm_write
+import igm.outputs.write_ts as igm_write_ts
 
 import numpy as np
 import tensorflow as tf
@@ -154,7 +155,9 @@ class IGM_Model2D(Model2D):
 
         if out_dir != None:
             self.cfg.outputs.write_ncdf.output_file = out_dir + "/igm_out.nc"
+            self.cfg.outputs.write_ts.output_file = out_dir + "/igm_out_ts.nc"
         igm_write.initialize(self.cfg, self.state)
+        igm_write_ts.initialize(self.cfg, self.state)
 
     # Time loop
     def step(self, dt):
@@ -217,9 +220,12 @@ class IGM_Model2D(Model2D):
         date = utils.floatyear_to_date(self.yr)
         date = (date[0], date[0])
 
+        self.state.vol = self.volume_m3
+
         # Write IGM outputs
         if self._mb_current_date != date or (self._mb_current_out is None):
             igm_write.run(self.cfg, self.state)
+            igm_write_ts.run(self.cfg, self.state)
 
         return dt_use
 
