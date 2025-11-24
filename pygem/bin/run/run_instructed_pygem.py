@@ -37,7 +37,6 @@ from pygem.interface2d import create_pseudo_flowline
 #         ds.attrs['mb_model_{}'.format(k)] = v
 
 # Next steps:
-# - Add timeseries output for IGM
 # - Think about Glen_A and Sliding_F in IGM and OGGM
 #   - Glen_A:
 #     -> add option to set Glen_A based on PyGEM calibration?
@@ -75,14 +74,15 @@ option_calibration = "HH2015"
 rgi_version = "RGI6"  # RGI version to use: RGI6 (RGI6.0) or RGI7 (RGI7.0)
 rgi_product = "70C" # 'Only for RGI7: '70C' for glacier complexes or '70G' for individual glacier (see https://www.glims.org/rgi_user_guide/products/glacier_complex_product.html)
 thickness_product = "consensus_ice_thickness"  # thickness product to use: 'consensus_ice_thickness' (Farinotti et al. 2019) or 'millan_ice_thickness' (Millan et al 2022)
+reset_gdirs = False  # True: re-download and process OGGM glacier directories. False: use existing glacier directories
 
 # Inputs and config
 climate_data_path = "/uio/hypatia/geofag-felles/projects/glacmass/data/PyGEM_input/climate_data/ERA5/"
 igm_config_file = "/uio/hypatia/geofag-felles/projects/glacmass/henning/igm-examples/instructed_oggm/params.yaml"
 #pygem_config_dir = "/uio/hypatia/geofag-personlig/geohyd-staff/johanmbr/PyGEM"
 pygem_config_dir = "/uio/hypatia/geofag-felles/projects/glacmass/henning/pygem/PyGEM"
-# working_dir = "/uio/hypatia/geofag-felles/projects/glacmass/henning/pygem/PyGEM/PyGEM_input"
-working_dir = "/uio/hypatia/geofag-felles/projects/glacmass/henning/pygem/PyGEM/PyGEM-IGM"
+working_dir = "/uio/hypatia/geofag-felles/projects/glacmass/henning/pygem/PyGEM_input"
+#working_dir = "/uio/hypatia/geofag-felles/projects/glacmass/henning/pygem/PyGEM/PyGEM-IGM"
 
 # Output directories
 # oggm_out_dir = "/uio/hypatia/geofag-personlig/geohyd-staff/johanmbr/PyGEM/PyGEM-IGM/outputs/OGGM"
@@ -98,23 +98,36 @@ def main():
     rootpath = pygem_prms["root"]
 
     print(rootpath)
-   # working_dir = rootpath + pygem_prms['oggm']['oggm_gdir_relpath']
+    working_dir = rootpath + pygem_prms['oggm']['oggm_gdir_relpath']
     print(working_dir)
 
+    # Load rgi_table for PyGEM
+    main_glac_rgi = modelsetup.selectglaciersrgitable(glac_no=glac_no)
+    glacier_rgi_table = main_glac_rgi.loc[main_glac_rgi.index.values[0], :]
+    print(glacier_rgi_table)
+
+    # get list of RGIId's for each rgitable being run
+    rgiids = main_glac_rgi['RGIId'].tolist()
 
     ### Handle OGGM data paths ###
+    # initialize glacier directories
     cfg.initialize(logging_level="WARNING")
     cfg.PATHS["working_dir"] = working_dir
-    # Load data from RGI version
-    if rgi_version == "RGI6":
-        base_url = "https://cluster.klima.uni-bremen.de/~oggm/gdirs/oggm_v1.6/L3-L5_files/2025.1/elev_bands/W5E5_utm/"
-        gdirs = workflow.init_glacier_directories(["RGI60-" + glac_no[0]], prepro_base_url=base_url, from_prepro_level=4, prepro_border=80)
-    elif rgi_version == "RGI7":
-        base_url = "https://cluster.klima.uni-bremen.de/~oggm/gdirs/oggm_v1.6/L1-L2_files/2025.6/elev_bands_w_data/"
-        gdirs = workflow.init_glacier_directories(glac_no, prepro_base_url=base_url, from_prepro_level=2, prepro_border=10, prepro_rgi_version=rgi_product)
-    else:
-        print("Please choose a valid RGI version")
-        return
+    if reset_gdirs: # re-download and process glacier directories
+        #Load data from RGI version
+        if rgi_version == "RGI6":
+            base_url = "https://cluster.klima.uni-bremen.de/~oggm/gdirs/oggm_v1.6/L3-L5_files/2025.1/elev_bands/W5E5_utm/"
+            #gdirs = workflow.init_glacier_directories(rgiids, prepro_base_url=base_url, from_prepro_level=4, prepro_border=80)
+            gdirs = workflow.init_glacier_directories(["RGI60-" + glac_no[0]], prepro_base_url=base_url, from_prepro_level=4, prepro_border=80)
+        elif rgi_version == "RGI7":
+            base_url = "https://cluster.klima.uni-bremen.de/~oggm/gdirs/oggm_v1.6/L1-L2_files/2025.6/elev_bands_w_data/"
+            gdirs = workflow.init_glacier_directories(glac_no, prepro_base_url=base_url, from_prepro_level=2, prepro_border=10, prepro_rgi_version=rgi_product)
+        else:
+            print("Please choose a valid RGI version")
+            return
+    else: # use existing glacier directories
+        gdirs = workflow.init_glacier_directories(rgiids)
+        #gdirs = workflow.init_glacier_directories(glac_no)
     
     
     gdir = gdirs[0]
@@ -126,10 +139,7 @@ def main():
     if thickness_product == "consensus_ice_thickness":
         bedtopo.add_consensus_thickness(gdir)
 
-    # Load rgi_table for PyGEM
-    main_glac_rgi = modelsetup.selectglaciersrgitable(glac_no=glac_no)
-    glacier_rgi_table = main_glac_rgi.loc[main_glac_rgi.index.values[0], :]
-    print(glacier_rgi_table)
+
 
     # Perform calibration, or specify file with stored calibration
     if isruncalibration == True:

@@ -106,6 +106,7 @@ class IGM_Model2D(Model2D):
         self.x = x
         self.y = y
 
+
         # Disable the training of the iceflow emulator
         # would it be possible to retrain the emulator during the simulation?
         self.cfg.processes.iceflow.retrain_iceflow_emulator_freq = 0
@@ -114,6 +115,20 @@ class IGM_Model2D(Model2D):
         self.state.thk = tf.Variable(self.ice_thick)
         self.state.usurf = tf.Variable(self.surface_h)
         self.state.smb = tf.Variable(tf.zeros_like(self.ice_thick))
+        # Set grid spacing and coordinates
+        self.state.dX = tf.ones_like(self.state.thk) * self.dx
+        self.state.x = tf.constant(self.x)
+        self.state.y = tf.constant(self.y)
+
+        # Misc
+        self.state.it = -1  # iteration counter
+        self.icemask = mb_filter  # glacier mask
+
+        # Initialize the ice flow module in IGM
+        igm.processes.iceflow.iceflow.initialize(self.cfg, self.state)
+
+        # Set IGM ice flow solver
+        igm.processes.iceflow.method='emulated' # Options: 'emulated' (default), 'solved', 'diagnostic'
 
         ### Define ice-flow parameters used in IGM
         # Ice rheology
@@ -150,17 +165,6 @@ class IGM_Model2D(Model2D):
             print("Please choose a valid sliding option")
             return  
 
-        # Set grid spacing and coordinates
-        self.state.dX = tf.ones_like(self.state.thk) * self.dx
-        self.state.x = tf.constant(self.x)
-        self.state.y = tf.constant(self.y)
-
-        # Misc
-        self.state.it = -1  # iteration counter
-        self.icemask = mb_filter  # glacier mask
-
-        # Initialize the ice flow module in IGM
-        igm.processes.iceflow.iceflow.initialize(self.cfg, self.state)
 
         if out_dir != None:
             current_time = datetime.now().strftime("%Y%m%d_%H%M%S") # get current time, for naming output files
