@@ -50,8 +50,8 @@ from pygem.interface2d import create_pseudo_flowline
 
 ### Pick glacier of choice ###
 #glac_no = ["08.01126"]  # Nigardsbreen, Norway
-glac_no = ["08.00312"]  # Storbreen, Norway
-#glac_no = ["11.01450"]  # Aletsch glacier
+#glac_no = ["08.00312"]  # Storbreen, Norway
+glac_no = ["11.01450"]  # Aletsch glacier
 #glac_no = ["11.00897"] # Hintereisferner, Austria
 
 #glac_no = ["RGI2000-v7.0-C-11-01450"]  # Aletsch glacier
@@ -67,7 +67,7 @@ flow_model = "IGM"  # choose either "OGGM" or "IGM"
 slidingoption = "constant"  # sliding coefficient for IGM: 'constant', 'elevation_dependent', 'igm_inversion'
 
 # SMB calibration options
-isruncalibration = True # True: run a calibration. False: use SMB parameter values a stored calibration
+isruncalibration = False # True: run a calibration. False: use SMB parameter values a stored calibration
 option_calibration = "HH2015"
 
 # Data options
@@ -78,7 +78,8 @@ reset_gdirs = False  # True: re-download and process OGGM glacier directories. F
 
 # Inputs and config
 climate_data_path = "/uio/hypatia/geofag-felles/projects/glacmass/data/PyGEM_input/climate_data/ERA5/"
-igm_config_file = "/uio/hypatia/geofag-felles/projects/glacmass/henning/igm-examples/instructed_oggm/params.yaml"
+igm_config_file = "/uio/hypatia/geofag-felles/projects/glacmass/henning/pygem/PyGEM/PyGEM-IGM/experiments/params.yaml"
+# igm_config_file = "/uio/hypatia/geofag-felles/projects/glacmass/henning/igm-examples/instructed_oggm/params.yaml"
 #pygem_config_dir = "/uio/hypatia/geofag-personlig/geohyd-staff/johanmbr/PyGEM"
 pygem_config_dir = "/uio/hypatia/geofag-felles/projects/glacmass/henning/pygem/PyGEM"
 working_dir = "/uio/hypatia/geofag-felles/projects/glacmass/henning/pygem/PyGEM_input"
@@ -236,8 +237,19 @@ def main():
 
         # Run the model
         current_time = datetime.now().strftime("%Y%m%d_%H%M%S") # get current time, for naming output files
+        start_time = datetime.now() # get current time, for calculating computation time
         igm_simulation_output = distributed_ev_model.run_2D_until_and_store(ref_endyear, run_path=None, step=1, grid=gdir.grid, print_stdout="My run")
         # igm_simulation_output = distributed_ev_model.run_2D_until_and_store(ref_endyear, run_path=igm_out_dir + f"/igm_out_{current_time}.nc", step=1, grid=gdir.grid, print_stdout="My run")
+        
+        final_time = datetime.now() # get current time, for calculating computation time
+
+        #calculate computation time in seconds, convert to minutes
+        computation_time = final_time-start_time
+        computation_time = computation_time.total_seconds() / 60.0
+
+        #Print computation time in minutes 
+        print(f"Computation time: {computation_time:.3f} min")
+
         print(igm_simulation_output.vol)
         # np.savetxt(igm_out_dir + f"/IGM_vol_evolution_{current_time}.txt", igm_simulation_output.vol, fmt="%.4f")
 

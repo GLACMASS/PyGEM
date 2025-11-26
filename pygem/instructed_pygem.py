@@ -107,9 +107,8 @@ class IGM_Model2D(Model2D):
         self.y = y
 
 
-        # Disable the training of the iceflow emulator
-        # would it be possible to retrain the emulator during the simulation?
-        self.cfg.processes.iceflow.retrain_iceflow_emulator_freq = 0
+        # Retraining of the iceflow emulator is set in params.yaml: iceflow.emulator.retrain_freq
+        #self.cfg.processes.iceflow.emulator.retrain_freq = 1 # 0 would be never, 1 every time step, 2 every second time step, etc
 
         # Initialize the glacier variables in the IGM model state
         self.state.thk = tf.Variable(self.ice_thick)
@@ -128,7 +127,7 @@ class IGM_Model2D(Model2D):
         igm.processes.iceflow.iceflow.initialize(self.cfg, self.state)
 
         # Set IGM ice flow solver
-        igm.processes.iceflow.method='emulated' # Options: 'emulated' (default), 'solved', 'diagnostic'
+        #igm.processes.iceflow.method='solved' # Options: 'emulated' (default), 'solved', 'diagnostic'
 
         ### Define ice-flow parameters used in IGM
         # Ice rheology
@@ -175,6 +174,7 @@ class IGM_Model2D(Model2D):
                                                         "divflux","slidingco",
             ]
             self.cfg.outputs.write_ts.output_file = out_dir + "/igm_out_ts_" + current_time + ".nc"
+
         igm_write.initialize(self.cfg, self.state)
         igm_write_ts.initialize(self.cfg, self.state)
 
