@@ -24,6 +24,8 @@ import os
 import sys
 import time
 import warnings
+import traceback
+import datetime
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -888,7 +890,7 @@ def run(list_packed_vars):
                         )
 
                     # ----- ICE THICKNESS INVERSION using OGGM -----
-                    if args.option_dynamics is not None:
+                    if args.option_dynamics not in (None, 'IGM'):
                         # Apply inversion_filter on mass balance with debris to avoid negative flux
                         if pygem_prms['mb']['include_debris']:
                             inversion_filter = True
@@ -1231,21 +1233,7 @@ def run(list_packed_vars):
                         if args.option_dynamics is not None:
                             if debug:
                                 graphics.plot_modeloutput_section(
-                                    ev_model, ax=ax, srfls='--', lnlab
-cfg.PARAMS['hydro_month_sh'] = 1
-cfg.PARAMS['trapezoid_lambdas'] = 1
-
-
-# ----- FUNCTIONS -----
-def none_or_value(value):
-    """Custom type function to handle 'none' or 'null' as None."""
-    if value.lower() in {'none', 'null'}:
-        return None
-    return value
-
-
-def getparser():
-    """el=f'Glacier year {args.sim_endyear + 1}'
+                                    ev_model, ax=ax, srfls='--', lnlabel=f'Glacier year {args.sim_endyear + 1}'
                                 )
                                 plt.figure()
                                 diag.volume_m3.plot()
@@ -1777,17 +1765,40 @@ def getparser():
                         )
                         output_binned.save_xr_ds()
 
+        # LOG FAILURE
         except Exception as err:
+
             # LOG FAILURE
             fail_fp = pygem_prms['root'] + '/Output/simulations/failed/' + reg_str + '/' + sim_climate_name + '/'
             if sim_climate_name not in ['ERA5', 'COAWST']:
                 fail_fp += sim_climate_scenario + '/'
-            if not os.path.exists(fail_fp):
-                os.makedirs(fail_fp, exist_ok=True)
-            txt_fn_fail = glacier_str + '-sim_failed.txt'
-            with open(fail_fp + txt_fn_fail, 'w') as text_file:
-                text_file.write(glacier_str + f' failed to complete simulation: {err}')
+            os.makedirs(fail_fp, exist_ok=True)
 
+            txt_fn_fail = glacier_str + '-sim_failed.txt'
+            fail_path = os.path.join(fail_fp, txt_fn_fail)
+
+            # Capture full traceback text
+            tb_text = traceback.format_exc()
+
+            # Optional: also capture a short repr of the exception and a timestamp
+            header = (
+                f"{datetime.datetime.utcnow().isoformat()}Z\n"
+                f"{glacier_str} failed to complete simulation\n"
+                f"Exception: {repr(err)}\n\n"
+            )
+
+            with open(fail_path, 'w') as text_file:
+                text_file.write(header)
+                text_file.write("Full traceback (most recent call last):\n")
+                text_file.write(tb_text)
+
+                # If you want to dump locals from this scope (be careful, may be large/privacy):
+                # text_file.write("\nLocals at except-block:\n")
+                # for k, v in locals().items():
+                #     try:
+                #         text_file.write(f"{k} = {repr(v)}\n")
+                #     except Exception:
+                #         text_file.write(f"{k} = <unrepr-able>\n")
 
 # %% PARALLEL PROCESSING
 def main():

@@ -126,10 +126,8 @@ class IGM_Model2D(Model2D):
         # Initialize the ice flow module in IGM
         igm.processes.iceflow.iceflow.initialize(self.cfg, self.state)
 
-        # Set IGM ice flow solver
-        #igm.processes.iceflow.method='solved' # Options: 'emulated' (default), 'solved', 'diagnostic'
-
         ### Define ice-flow parameters used in IGM
+
         # Ice rheology
         #arrhenius_factor = cfg.PARAMS["glen_a"] * SEC_IN_YEAR * 1e18  # Rate factor in Glen's flow law, MPa^-3 yr^-1
         arrhenius_factor = 78  # Default = 78 from IGM, MPa^-3 yr^-1 - #FIXME should be added to input parameters in config.yaml later?
