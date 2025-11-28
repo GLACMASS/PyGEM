@@ -17,6 +17,7 @@ Run a model simulation
 # Built-in libraries
 import argparse
 import copy
+import datetime
 import json
 import multiprocessing
 import os
@@ -43,12 +44,14 @@ pygem_prms = config_manager.read_config()
 from oggm import cfg, tasks, utils
 from oggm.core.flowline import FluxBasedModel, SemiImplicitModel
 from oggm.core.massbalance import apparent_mb_from_any_mb
+from oggm.shop import bedtopo
 
 import pygem.gcmbiasadj as gcmbiasadj
 import pygem.pygem_modelsetup as modelsetup
 from pygem import class_climate, output
 from pygem.glacierdynamics import MassRedistributionCurveModel
-from pygem.instructed_pygem import IGM_Model2D #is this import needed here?
+from pygem.instructed_pygem import IGM_Model2D
+from pygem.interface2d import create_pseudo_flowline
 from pygem.massbalance import PyGEMMassBalance
 from pygem.oggm_compat import (
     get_spinup_flowlines,
@@ -1112,6 +1115,69 @@ def run(list_packed_vars):
                                 )
 
                     ######################################
+                    ##### IGM dynamical model        #####
+                    ######################################
+                    elif args.option_dynamics == 'IGM':
+                        if debug:
+                            print('IGM DYNAMICS')
+
+                        #FIXME keeping all IGM-specifics here for now, some can move further up in run_simulation, and to config.yaml, later
+                        igm_config_file = "/uio/hypatia/geofag-felles/projects/glacmass/henning/pygem/PyGEM/PyGEM-IGM/experiments/params.yaml" #move to config.yaml later
+                        igm_out_dir = "/uio/hypatia/geofag-felles/projects/glacmass/henning/pygem/PyGEM/PyGEM-IGM/outputs/IGM" #will be moved to config.yaml later
+                        slidingoption = "constant" # will be moved to config.yaml later
+                        thickness_product = "consensus_ice_thickness"  # 'consensus_ice_thickness' (Farinotti et al. 2019) or 'millan_ice_thickness' (Millan et al 2022)
+
+                        # Add bed topography
+                        if thickness_product == "millan_ice_thickness":
+                            #FIXME to be added
+                            print("Millan thickness product not yet fully implemented")
+                        if thickness_product == "consensus_ice_thickness":
+                            bedtopo.add_consensus_thickness(gdir)
+
+                        #Load glacier geometry data
+                        with xr.open_dataset(gdir.get_filepath("gridded_data")) as ds:
+                            ds = ds.load()
+                        thick = ds[thickness_product].where(~ds[thickness_product].isnull(), 0)
+                        surface_h = ds.topo
+                        bed = ds.topo - thick
+                        mask = ds.glacier_mask.data == 1
+                        fls = create_pseudo_flowline(thick.values, surface_h.values)
+
+                        # Create IGM evolution model
+                        ev_model = IGM_Model2D(
+                            bed.data,
+                            init_ice_thick=thick.data,
+                            config=igm_config_file,
+                            dx=gdir.grid.dx,
+                            mb_model=mbmod,
+                            y0=args.sim_startyear,
+                            mb_filter=mask,
+                            x=ds.x,
+                            y=ds.y,
+                            out_dir=igm_out_dir,
+                            sliding_option=slidingoption)
+
+                        # Run the model
+                        current_time = datetime.now().strftime("%Y%m%d_%H%M%S") # get current time, for naming output files
+                        start_time = datetime.now() # get current time, for calculating computation time
+                        igm_simulation_output = ev_model.run_2D_until_and_store(ref_endyear, run_path=None, step=1, grid=gdir.grid, print_stdout="My run")
+                        # igm_simulation_output = ev_model.run_2D_until_and_store(ref_endyear, run_path=igm_out_dir + f"/igm_out_{current_time}.nc", step=1, grid=gdir.grid, print_stdout="My run")
+                        
+                        final_time = datetime.now() # get current time, for calculating computation time
+
+                        #calculate computation time in seconds, convert to minutes
+                        computation_time = final_time-start_time
+                        computation_time = computation_time.total_seconds() / 60.0
+
+                        #Print computation time in minutes 
+                        print(f"Computation time: {computation_time:.3f} min")
+
+                        _, diag = ev_model.run_until_and_store(args.sim_endyear + 1)
+                        #    print('shape of volume:', ev_model.mb_model.glac_wide_volume_annual.shape, diag.volume_m3.shape)
+                        ev_model.mb_model.glac_wide_volume_annual = diag.volume_m3.values
+                        ev_model.mb_model.glac_wide_area_annual = diag.area_m2.values
+
+                    ######################################
                     ######### no dynamical model #########
                     ######################################
                     elif args.option_dynamics is None:
@@ -1165,7 +1231,21 @@ def run(list_packed_vars):
                         if args.option_dynamics is not None:
                             if debug:
                                 graphics.plot_modeloutput_section(
-                                    ev_model, ax=ax, srfls='--', lnlabel=f'Glacier year {args.sim_endyear + 1}'
+                                    ev_model, ax=ax, srfls='--', lnlab
+cfg.PARAMS['hydro_month_sh'] = 1
+cfg.PARAMS['trapezoid_lambdas'] = 1
+
+
+# ----- FUNCTIONS -----
+def none_or_value(value):
+    """Custom type function to handle 'none' or 'null' as None."""
+    if value.lower() in {'none', 'null'}:
+        return None
+    return value
+
+
+def getparser():
+    """el=f'Glacier year {args.sim_endyear + 1}'
                                 )
                                 plt.figure()
                                 diag.volume_m3.plot()
