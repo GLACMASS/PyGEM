@@ -17,7 +17,6 @@ Run a model simulation
 # Built-in libraries
 import argparse
 import copy
-import datetime
 import json
 import multiprocessing
 import os
@@ -25,7 +24,7 @@ import sys
 import time
 import warnings
 import traceback
-import datetime
+from datetime import datetime
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -955,10 +954,20 @@ def run(list_packed_vars):
                         th = cls['hgt'][-1]
                         vmin, vmax = cfg.PARAMS['free_board_marine_terminating']
                         water_level = utils.clip_scalar(0, th - vmax, th - vmin)
+
+                    # No ice dynamics options
+                    else:
+                        nfls = fls
+
+                    # Record initial surface h for overdeepening calculations
+                    surface_h_initial = nfls[0].surface_h
                     
-                    elif args.option_dynamics == 'IGM':
+                    if args.option_dynamics == 'IGM':
                         # Set thickness product (to be added to config.yaml later)
                         thickness_product = "consensus_ice_thickness"  # 'consensus_ice_thickness' (Farinotti et al. 2019) or 'millan_ice_thickness' (Millan et al 2022)
+
+                        if debug:
+                            print('Loading glacier data for IGM dynamics')
 
                         # Load glacier data
                         with xr.open_dataset(gdir.get_filepath("gridded_data")) as ds:
@@ -978,17 +987,11 @@ def run(list_packed_vars):
                         if thickness_product == "consensus_ice_thickness":
                             bedtopo.add_consensus_thickness(gdir)
 
-
-                    # No ice dynamics options
-                    else:
-                        nfls = fls
-
-                    # Record initial surface h for overdeepening calculations
-                    surface_h_initial = nfls[0].surface_h
-
                     # ------ MODEL WITH EVOLVING AREA ------
                     # Create mass balance model
                     if args.option_dynamics == 'IGM': #FIXME: possible to merge with PyGEMMassBalance block below?
+                        # if debug:
+                        print('Creating SMB model for IGM glacier dynamics')
                         # Create mass balance model IGM dynamics (pseudo-flowline)
                         mbmod = PyGEMMassBalance(
                             gdir,
@@ -999,6 +1002,7 @@ def run(list_packed_vars):
                         )
                     else:
                         # Mass balance model for use with flowline-based dynamics
+                        print('Creating SMB model for flowline-based dynamics')
                         mbmod = PyGEMMassBalance(
                             gdir,
                             modelprms,
@@ -1155,17 +1159,16 @@ def run(list_packed_vars):
                     ##### IGM dynamical model        #####
                     ######################################
                     elif args.option_dynamics == 'IGM':
-                        if debug:
-                            print('IGM DYNAMICS')
+                        # if debug:
+                        print('IGM DYNAMICS')
 
                         #FIXME keeping all IGM-specifics here for now, some can move further up in run_simulation, and to config.yaml, later
                         igm_config_file = "/uio/hypatia/geofag-felles/projects/glacmass/henning/pygem/PyGEM/PyGEM-IGM/experiments/params.yaml" #move to config.yaml later
                         igm_out_dir = "/uio/hypatia/geofag-felles/projects/glacmass/henning/pygem/PyGEM/PyGEM-IGM/outputs/IGM" #will be moved to config.yaml later
                         slidingoption = "constant" # will be moved to config.yaml later
-
-
+                        
                         # Create IGM evolution model
-                        ev_model = IGM_Model2D(
+                        distributed_ev_model = IGM_Model2D(
                             bed.data,
                             init_ice_thick=thick.data,
                             config=igm_config_file,
@@ -1176,32 +1179,33 @@ def run(list_packed_vars):
                             x=ds.x,
                             y=ds.y,
                             out_dir=igm_out_dir,
-                            sliding_option=slidingoption)
+                            sliding_option=slidingoption,   
+                        )
 
                         # Run the model
-                        current_time = datetime.now().strftime("%Y%m%d_%H%M%S") # get current time, for naming output files
                         start_time = datetime.now() # get current time, for calculating computation time
-                        igm_simulation_output = ev_model.run_2D_until_and_store(
+
+                        # print("Starting IGM simulation (stderr)", file=sys.stderr, flush=True)
+                        print("Starting IGM simulation...")
+                        igm_simulation_output = distributed_ev_model.run_2D_until_and_store(
                             ref_endyear,
                             run_path=None,
                             step=1,
                             grid=gdir.grid,
-                            print_stdout="My run")
-                        # igm_simulation_output = ev_model.run_2D_until_and_store(ref_endyear, run_path=igm_out_dir + f"/igm_out_{current_time}.nc", step=1, grid=gdir.grid, print_stdout="My run")
-                        
-                        final_time = datetime.now() # get current time, for calculating computation time
+                            print_stdout="My IGM run",
+                        )
 
                         #calculate computation time in seconds, convert to minutes
-                        computation_time = final_time-start_time
+                        computation_time = datetime.now()-start_time
                         computation_time = computation_time.total_seconds() / 60.0
 
-                        #Print computation time in minutes 
-                        print(f"Computation time: {computation_time:.3f} min")
+                        #Print computation time in minutes (can be added to IGM output .nc file later)
+                        print(f"IGM computation time: {computation_time:.3f} min")
 
-                        _, diag = ev_model.run_until_and_store(args.sim_endyear + 1)
-                        #    print('shape of volume:', ev_model.mb_model.glac_wide_volume_annual.shape, diag.volume_m3.shape)
-                        ev_model.mb_model.glac_wide_volume_annual = diag.volume_m3.values
-                        ev_model.mb_model.glac_wide_area_annual = diag.area_m2.values
+                        # _, diag = ev_model.run_until_and_store(args.sim_endyear + 1)
+                        # #    print('shape of volume:', ev_model.mb_model.glac_wide_volume_annual.shape, diag.volume_m3.shape)
+                        # ev_model.mb_model.glac_wide_volume_annual = diag.volume_m3.values
+                        # ev_model.mb_model.glac_wide_area_annual = diag.area_m2.values
 
                     ######################################
                     ######### no dynamical model #########
@@ -1806,7 +1810,7 @@ def run(list_packed_vars):
 
             # Optional: also capture a short repr of the exception and a timestamp
             header = (
-                f"{datetime.datetime.utcnow().isoformat()}Z\n"
+                f"{datetime.utcnow().isoformat()}Z\n"
                 f"{glacier_str} failed to complete simulation\n"
                 f"Exception: {repr(err)}\n\n"
             )

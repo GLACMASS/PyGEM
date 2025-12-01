@@ -236,7 +236,6 @@ def main():
         distributed_ev_model = IGM_Model2D(bed.data, init_ice_thick=thick.data, config=igm_config_file, dx=gdir.grid.dx, mb_model=mbmod, y0=ref_startyear, mb_filter=mask, x=ds.x, y=ds.y, out_dir=igm_out_dir, sliding_option=slidingoption)
 
         # Run the model
-        current_time = datetime.now().strftime("%Y%m%d_%H%M%S") # get current time, for naming output files
         start_time = datetime.now() # get current time, for calculating computation time
         igm_simulation_output = distributed_ev_model.run_2D_until_and_store(ref_endyear, run_path=None, step=1, grid=gdir.grid, print_stdout="My run")
         # igm_simulation_output = distributed_ev_model.run_2D_until_and_store(ref_endyear, run_path=igm_out_dir + f"/igm_out_{current_time}.nc", step=1, grid=gdir.grid, print_stdout="My run")
