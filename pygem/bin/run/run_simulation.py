@@ -890,7 +890,7 @@ def run(list_packed_vars):
                         )
 
                     # ----- ICE THICKNESS INVERSION using OGGM -----
-                    if args.option_dynamics not in (None, 'IGM'):
+                    if args.option_dynamics in ['OGGM', 'MassRedistributionCurves']:
                         # Apply inversion_filter on mass balance with debris to avoid negative flux
                         if pygem_prms['mb']['include_debris']:
                             inversion_filter = True
@@ -955,6 +955,29 @@ def run(list_packed_vars):
                         th = cls['hgt'][-1]
                         vmin, vmax = cfg.PARAMS['free_board_marine_terminating']
                         water_level = utils.clip_scalar(0, th - vmax, th - vmin)
+                    
+                    elif args.option_dynamics == 'IGM':
+                        # Set thickness product (to be added to config.yaml later)
+                        thickness_product = "consensus_ice_thickness"  # 'consensus_ice_thickness' (Farinotti et al. 2019) or 'millan_ice_thickness' (Millan et al 2022)
+
+                        # Load glacier data
+                        with xr.open_dataset(gdir.get_filepath("gridded_data")) as ds:
+                            ds = ds.load()
+                        thick = ds[thickness_product].where(~ds[thickness_product].isnull(), 0)
+                        surface_h = ds.topo
+                        bed = ds.topo - thick
+                        mask = ds.glacier_mask.data == 1
+                        
+                        #Create pseudo flowline, and assign thickness and surface heights
+                        fls = create_pseudo_flowline(thick.values, surface_h.values)
+
+                        # Add bed topography
+                        if thickness_product == "millan_ice_thickness":
+                            #FIXME to be added
+                            print("Millan thickness product not yet fully implemented")
+                        if thickness_product == "consensus_ice_thickness":
+                            bedtopo.add_consensus_thickness(gdir)
+
 
                     # No ice dynamics options
                     else:
@@ -964,14 +987,26 @@ def run(list_packed_vars):
                     surface_h_initial = nfls[0].surface_h
 
                     # ------ MODEL WITH EVOLVING AREA ------
-                    # Mass balance model
-                    mbmod = PyGEMMassBalance(
-                        gdir,
-                        modelprms,
-                        glacier_rgi_table,
-                        fls=nfls,
-                        option_areaconstant=False,
-                    )
+                    # Create mass balance model
+                    if args.option_dynamics == 'IGM': #FIXME: possible to merge with PyGEMMassBalance block below?
+                        # Create mass balance model IGM dynamics (pseudo-flowline)
+                        mbmod = PyGEMMassBalance(
+                            gdir,
+                            modelprms,
+                            glacier_rgi_table,
+                            fls=fls,
+                            fl_id=0,
+                        )
+                    else:
+                        # Mass balance model for use with flowline-based dynamics
+                        mbmod = PyGEMMassBalance(
+                            gdir,
+                            modelprms,
+                            glacier_rgi_table,
+                            fls=nfls,
+                            option_areaconstant=False,
+                        )
+
 
                     ######################################
                     ### OGGM dynamical evolution model ###
@@ -1127,23 +1162,7 @@ def run(list_packed_vars):
                         igm_config_file = "/uio/hypatia/geofag-felles/projects/glacmass/henning/pygem/PyGEM/PyGEM-IGM/experiments/params.yaml" #move to config.yaml later
                         igm_out_dir = "/uio/hypatia/geofag-felles/projects/glacmass/henning/pygem/PyGEM/PyGEM-IGM/outputs/IGM" #will be moved to config.yaml later
                         slidingoption = "constant" # will be moved to config.yaml later
-                        thickness_product = "consensus_ice_thickness"  # 'consensus_ice_thickness' (Farinotti et al. 2019) or 'millan_ice_thickness' (Millan et al 2022)
 
-                        # Add bed topography
-                        if thickness_product == "millan_ice_thickness":
-                            #FIXME to be added
-                            print("Millan thickness product not yet fully implemented")
-                        if thickness_product == "consensus_ice_thickness":
-                            bedtopo.add_consensus_thickness(gdir)
-
-                        #Load glacier geometry data
-                        with xr.open_dataset(gdir.get_filepath("gridded_data")) as ds:
-                            ds = ds.load()
-                        thick = ds[thickness_product].where(~ds[thickness_product].isnull(), 0)
-                        surface_h = ds.topo
-                        bed = ds.topo - thick
-                        mask = ds.glacier_mask.data == 1
-                        fls = create_pseudo_flowline(thick.values, surface_h.values)
 
                         # Create IGM evolution model
                         ev_model = IGM_Model2D(
@@ -1162,7 +1181,12 @@ def run(list_packed_vars):
                         # Run the model
                         current_time = datetime.now().strftime("%Y%m%d_%H%M%S") # get current time, for naming output files
                         start_time = datetime.now() # get current time, for calculating computation time
-                        igm_simulation_output = ev_model.run_2D_until_and_store(ref_endyear, run_path=None, step=1, grid=gdir.grid, print_stdout="My run")
+                        igm_simulation_output = ev_model.run_2D_until_and_store(
+                            ref_endyear,
+                            run_path=None,
+                            step=1,
+                            grid=gdir.grid,
+                            print_stdout="My run")
                         # igm_simulation_output = ev_model.run_2D_until_and_store(ref_endyear, run_path=igm_out_dir + f"/igm_out_{current_time}.nc", step=1, grid=gdir.grid, print_stdout="My run")
                         
                         final_time = datetime.now() # get current time, for calculating computation time
