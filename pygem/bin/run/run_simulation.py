@@ -978,7 +978,7 @@ def run(list_packed_vars):
                         mask = ds.glacier_mask.data == 1
                         
                         #Create pseudo flowline, and assign thickness and surface heights
-                        fls = create_pseudo_flowline(thick.values, surface_h.values)
+                        fls = create_pseudo_flowline(thick.values, surface_h.values, gdir.grid.dx)
 
                         # Add bed topography
                         if thickness_product == "millan_ice_thickness":

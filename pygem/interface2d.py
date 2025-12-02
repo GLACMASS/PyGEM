@@ -175,7 +175,7 @@ class Model2D(object):
             # We need to reset all
             self._mb_current_date = date
 
-            fls = create_pseudo_flowline(self.ice_thick, self.surface_h)
+            fls = create_pseudo_flowline(self.ice_thick, self.surface_h, self.dx)
 
             _mb = self._mb_call(self.surface_h.flatten(), year=self.yr, fl_id=0, fls=fls)
             _mb = _mb.reshape((self.ny, self.nx))
@@ -308,18 +308,35 @@ class Model2D(object):
         return run_ds
 
 
-def create_pseudo_flowline(thk_2d, surface_h_2d):
+def create_pseudo_flowline(thk_2d, surface_h_2d, dx):
     # This function creates an object that mimics a OGGM flowline from 2D input data
     # No information is lost as all grid points are included in the pseudo flowline object
+    """
+    Parameters
+    ----------------
+    thk_2d - 2d thickness (2d array)
+    surface_h_2d - 2d ice-surface height (2d array)
+    dx - grid resolution in meters (int)
+
+    Returns
+    -------
+    igm_fls : namespace
+        the pseudo flowline object
+    """
+
+    # Create pseudo-flowline
     igm_fls = []
     igm_fl = {}
     igm_fls.append(igm_fl)
+
+    # Go from 2d arrays to 1d arrays
     igm_fl["thick"] = thk_2d.flatten()
     igm_fl["surface_h"] = surface_h_2d.flatten()
-    igm_fl["widths_m"] = np.full_like(igm_fl["thick"], 100)
-    igm_fl["dx_meter"] = np.full_like(igm_fl["thick"], 100)
-    igm_fl["section"] = np.full_like(igm_fl["thick"], 100)
-    # igm_fls.width_m = 100
+
+    # Create arrays needed for flowline-based output: widths, dx, section
+    igm_fl["widths_m"] = np.full_like(igm_fl["thick"], dx)
+    igm_fl["dx_meter"] = np.full_like(igm_fl["thick"], dx)
+    igm_fl["section"] = np.full_like(igm_fl["thick"], dx*igm_fl["thick"])
     igm_fls = dict_to_namespace(igm_fls)
     return igm_fls
 

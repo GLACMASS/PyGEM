@@ -215,7 +215,7 @@ def main():
         surface_h = ds.topo
         bed = ds.topo - thick
         mask = ds.glacier_mask.data == 1
-        fls = create_pseudo_flowline(thick.values, surface_h.values)
+        fls = create_pseudo_flowline(thick.values, surface_h.values, gdir.grid.dx)
 
     else:
         print("Please choose a valid flow model")
