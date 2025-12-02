@@ -237,8 +237,9 @@ def main():
 
         # Run the model
         start_time = datetime.now() # get current time, for calculating computation time
-        igm_simulation_output = distributed_ev_model.run_2D_until_and_store(ref_endyear, run_path=None, step=1, grid=gdir.grid, print_stdout="My run")
-        # igm_simulation_output = distributed_ev_model.run_2D_until_and_store(ref_endyear, run_path=igm_out_dir + f"/igm_out_{current_time}.nc", step=1, grid=gdir.grid, print_stdout="My run")
+        time_string= start_time.strftime("%Y%m%d_%H%M%S") # get time string, for naming of netcdf output
+        #igm_simulation_output = distributed_ev_model.run_2D_until_and_store(ref_endyear, run_path=None, step=1, grid=gdir.grid, print_stdout="My run")
+        igm_simulation_output = distributed_ev_model.run_2D_until_and_store(ref_endyear, run_path=igm_out_dir + f"/igm_out_run2D_{time_string}.nc", step=1, grid=gdir.grid, print_stdout="My run")
         
         final_time = datetime.now() # get current time, for calculating computation time
 
