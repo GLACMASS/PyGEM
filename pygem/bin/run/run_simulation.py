@@ -1184,12 +1184,13 @@ def run(list_packed_vars):
 
                         # Run the model
                         start_time = datetime.now() # get current time, for calculating computation time
+                        time_string = start_time.strftime("%Y%m%d_%H%M%S") # get time string, for naming of netcdf output
 
                         # print("Starting IGM simulation (stderr)", file=sys.stderr, flush=True)
                         print("Starting IGM simulation...")
                         igm_simulation_output = distributed_ev_model.run_2D_until_and_store(
                             ref_endyear,
-                            run_path=None,
+                            run_path=igm_out_dir + f"/igm_out_run2D_{time_string}.nc",
                             step=1,
                             grid=gdir.grid,
                             print_stdout="My IGM run",
