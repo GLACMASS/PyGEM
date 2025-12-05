@@ -1168,7 +1168,9 @@ def run(list_packed_vars):
                         slidingoption = "constant" # will be moved to config.yaml later
                         
                         # Create IGM evolution model
-                        distributed_ev_model = IGM_Model2D(
+                        #FIXME: should we pass time_string into IGM_Model2D here, to make sure consistent naming of
+                        # output netcdf files?
+                        ev_model = IGM_Model2D(
                             bed.data,
                             init_ice_thick=thick.data,
                             config=igm_config_file,
@@ -1188,13 +1190,20 @@ def run(list_packed_vars):
 
                         # print("Starting IGM simulation (stderr)", file=sys.stderr, flush=True)
                         print("Starting IGM simulation...")
-                        igm_simulation_output = distributed_ev_model.run_2D_until_and_store(
+                        # igm_simulation_output = distributed_ev_model.run_2D_until_and_store(
+                        diag = ev_model.run_2D_until_and_store(
                             ref_endyear,
-                            run_path=igm_out_dir + f"/igm_out_run2D_{time_string}.nc",
+                            run_path=None,  #igm_out_dir + f"/igm_out_run2D_{time_string}.nc",
                             step=1,
                             grid=gdir.grid,
                             print_stdout="My IGM run",
                         )
+                        # _, diag = ev_model.run_until_and_store(args.sim_endyear + 1)
+
+
+                        # #    print('shape of volume:', ev_model.mb_model.glac_wide_volume_annual.shape, diag.volume_m3.shape)
+                        ev_model.mb_model.glac_wide_volume_annual = diag.vol.values
+                        ev_model.mb_model.glac_wide_area_annual = diag.area.values
 
                         #calculate computation time in seconds, convert to minutes
                         computation_time = datetime.now()-start_time
@@ -1203,10 +1212,66 @@ def run(list_packed_vars):
                         #Print computation time in minutes (can be added to IGM output .nc file later)
                         print(f"IGM computation time: {computation_time:.3f} min")
 
-                        # _, diag = ev_model.run_until_and_store(args.sim_endyear + 1)
-                        # #    print('shape of volume:', ev_model.mb_model.glac_wide_volume_annual.shape, diag.volume_m3.shape)
-                        # ev_model.mb_model.glac_wide_volume_annual = diag.volume_m3.values
-                        # ev_model.mb_model.glac_wide_area_annual = diag.area_m2.values
+
+                        # time
+                        yearly_time = np.arange(np.floor(args.sim_startyear), np.floor(args.sim_endyear) + 1)
+
+                        # yrs, months = utils.floatyear_to_date(monthly_time)
+                        # cyrs, cmonths = utils.hydrodate_to_calendardate(yrs, months, start_month=sm)
+
+                        # init output
+                        ny = len(yearly_time)
+                        # if ny == 1:
+                        #     yrs = [yrs]
+                        #     cyrs = [cyrs]
+                        #     months = [months]
+                        #     cmonths = [cmonths]
+                        # nm = len(monthly_time)
+                        # sects = [(np.zeros((ny, fl.nx)) * np.nan) for fl in self.fls]
+                        # widths = [(np.zeros((ny, fl.nx)) * np.nan) for fl in self.fls]
+                        # bucket = [(np.zeros(nyV) * np.nan) for _ in self.fls]
+                        ## Create output dataset
+                        diag_ds = xr.Dataset()
+
+                        # Global attributes
+                        diag_ds.attrs['description'] = 'IGM model output'
+                        diag_ds.attrs['calendar'] = '365-day no leap'
+                        #diag_ds.attrs['creation_date'] = strftime('%Y-%m-%d %H:%M:%S', gmtime())
+                        #diag_ds.attrs['hemisphere'] = self.mb_model.hemisphere
+
+                        # Coordinates
+                        diag_ds.coords['time'] = ('time', yearly_time)
+                        # diag_ds.coords['calendar_year'] = ('time', cyrs)
+                        # diag_ds.coords['calendar_month'] = ('time', cmonths)
+
+                        # diag_ds['time'].attrs['description'] = 'Floating hydrological year'
+                        # diag_ds['calendar_year'].attrs['description'] = 'Calendar year'
+                        # diag_ds['calendar_month'].attrs['description'] = 'Calendar month'
+
+                        # Variables and attributes
+                        diag_ds['volume_m3'] = ('time', np.zeros(ny) * np.nan)
+                        diag_ds['volume_m3'].attrs['description'] = 'Total glacier volume'
+                        diag_ds['volume_m3'].attrs['unit'] = 'm 3'
+                        diag_ds['area_m2'] = ('time', np.zeros(ny) * np.nan)
+                        diag_ds['area_m2'].attrs['description'] = 'Total glacier area'
+                        diag_ds['area_m2'].attrs['unit'] = 'm 2'
+                        # diag_ds['length_m'] = ('time', np.zeros(nm) * np.nan)
+
+                        # diag_ds['length_m'].attrs['description'] = 'Glacier length'
+
+                        # diag_ds['length_m'].attrs['unit'] = 'm 3'
+
+                        # diag_ds['ela_m'] = ('time', np.zeros(nm) * np.nan)
+
+                        # diag_ds['ela_m'].attrs['description'] = 'Annual Equilibrium Line Altitude  (ELA)'
+
+                        # diag_ds['ela_m'].attrs['unit'] = 'm a.s.l'
+
+                        # Add the data for volume_m3 and area_m2 to the diag_ds output
+                        diag_ds['volume_m3'].data = diag.vol.values
+                        diag_ds['area_m2'].data = diag.area.values
+                        diag_ds['length_m'].data = diag.length.values
+
 
                     ######################################
                     ######### no dynamical model #########
