@@ -285,8 +285,8 @@ class Model2D(object):
         run_ds = grid.to_dataset() if grid else xr.Dataset()
         run_ds["ice_thickness"] = xr.DataArray(out_thick, dims=["time", "y", "x"], coords={"time": yrs})
         run_ds["bed_topo"] = xr.DataArray(self.bed_topo, dims=["y", "x"])
-        run_ds["vol"] = xr.DataArray(out_vol, dims=["time"], coords={"time": yrs})
-        run_ds["area"] = xr.DataArray(out_area, dims=["time"], coords={"time": yrs})
+        run_ds["volume_m3"] = xr.DataArray(out_vol, dims=["time"], coords={"time": yrs})
+        run_ds["area_m2"] = xr.DataArray(out_area, dims=["time"], coords={"time": yrs})
 
         # write output dataset to netcdf
         if run_path is not None:

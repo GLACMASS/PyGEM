@@ -1202,8 +1202,8 @@ def run(list_packed_vars):
 
 
                         # #    print('shape of volume:', ev_model.mb_model.glac_wide_volume_annual.shape, diag.volume_m3.shape)
-                        ev_model.mb_model.glac_wide_volume_annual = diag.vol.values
-                        ev_model.mb_model.glac_wide_area_annual = diag.area.values
+                        ev_model.mb_model.glac_wide_volume_annual = diag.volume_m3.values
+                        ev_model.mb_model.glac_wide_area_annual = diag.area_m2.values
 
                         #calculate computation time in seconds, convert to minutes
                         computation_time = datetime.now()-start_time
@@ -1268,9 +1268,9 @@ def run(list_packed_vars):
                         # diag_ds['ela_m'].attrs['unit'] = 'm a.s.l'
 
                         # Add the data for volume_m3 and area_m2 to the diag_ds output
-                        diag_ds['volume_m3'].data = diag.vol.values
-                        diag_ds['area_m2'].data = diag.area.values
-                        diag_ds['length_m'].data = diag.length.values
+                        diag_ds['volume_m3'].data = diag.volume_m3.values
+                        diag_ds['area_m2'].data = diag.area_m2.values
+                        #diag_ds['length_m'].data = diag.length.values
 
 
                     ######################################
@@ -1381,23 +1381,41 @@ def run(list_packed_vars):
                         output_glac_massbaltotal_steps[:, n_iter] = mbmod.glac_wide_massbaltotal
                         output_glac_runoff_steps[:, n_iter] = mbmod.glac_wide_runoff
                         output_glac_snowline_steps[:, n_iter] = mbmod.glac_wide_snowline
-                        output_glac_area_annual[:, n_iter] = diag.area_m2.values
-                        output_glac_mass_annual[:, n_iter] = (
-                            diag.volume_m3.values * pygem_prms['constants']['density_ice']
-                        )
-                        output_glac_mass_bsl_annual[:, n_iter] = (
-                            diag.volume_bsl_m3.values * pygem_prms['constants']['density_ice']
-                        )
-                        output_glac_mass_change_ignored_annual[:-1, n_iter] = (
-                            mbmod.glac_wide_volume_change_ignored_annual * pygem_prms['constants']['density_ice']
-                        )
+                        # print("output_glac_area_annual.shape =", output_glac_area_annual.shape)
+                        # print("n_iter =", n_iter)
+                        # print("diag.area_m2.values.shape =", diag.area_m2.values.shape)
+
+                        # special treatment for IGM, which does not have the final year output in diag. FIXME?
+                        if args.option_dynamics == 'IGM':
+                            output_glac_area_annual[:-1, n_iter] = diag.area_m2.values
+                            output_glac_mass_annual[:-1, n_iter] = (
+                                diag.volume_m3.values * pygem_prms['constants']['density_ice']
+                            )
+                            # output_glac_mass_bsl_annual[:-1, n_iter] = (
+                            #     diag.volume_bsl_m3.values * pygem_prms['constants']['density_ice']
+                            # )
+                            output_glac_mass_change_ignored_annual[:-1, n_iter] = (
+                                mbmod.glac_wide_volume_change_ignored_annual * pygem_prms['constants']['density_ice']
+                            )
+                        else:
+                            output_glac_area_annual[:, n_iter] = diag.area_m2.values
+                            output_glac_mass_annual[:, n_iter] = (
+                                diag.volume_m3.values * pygem_prms['constants']['density_ice']
+                            )
+                            output_glac_mass_bsl_annual[:, n_iter] = (
+                                diag.volume_bsl_m3.values * pygem_prms['constants']['density_ice']
+                            )
+                            output_glac_mass_change_ignored_annual[:-1, n_iter] = (
+                                mbmod.glac_wide_volume_change_ignored_annual * pygem_prms['constants']['density_ice']
+                            )
+                        
                         output_glac_ELA_annual[:, n_iter] = mbmod.glac_wide_ELA_annual
                         output_offglac_prec_steps[:, n_iter] = mbmod.offglac_wide_prec
-
                         output_offglac_refreeze_steps[:, n_iter] = mbmod.offglac_wide_refreeze
                         output_offglac_melt_steps[:, n_iter] = mbmod.offglac_wide_melt
                         output_offglac_snowpack_steps[:, n_iter] = mbmod.offglac_wide_snowpack
                         output_offglac_runoff_steps[:, n_iter] = mbmod.offglac_wide_runoff
+
                         # binned ouputs
                         if args.option_dynamics == 'OGGM':
                             # grab binned outputs from oggm flowline diagnostics
@@ -1407,6 +1425,15 @@ def run(list_packed_vars):
                             output_glac_bin_mass_annual_sim = (
                                 ds[0].volume_m3.values.T[:, :, np.newaxis] * pygem_prms['constants']['density_ice']
                             )
+                        elif args.option_dynamics == 'IGM':
+                            # grab binned outputs from igm flowline-line diagnostics
+                            # note, transpose restructures (time, "distance"_along_flowline) -> ("distance"_along_flowline, time)
+                            output_glac_bin_area_annual_sim = diag_ds[0].area_m2.values.T[:, :, np.newaxis]
+                            output_glac_bin_icethickness_annual_sim = diag_ds[0].ice_thickness.values.T[:, :, np.newaxis]
+                            output_glac_bin_mass_annual_sim = (
+                                diag_ds[0].volume_m3.values.T[:, :, np.newaxis] * pygem_prms['constants']['density_ice']
+                            )
+
                         else:
                             output_glac_bin_area_annual_sim = mbmod.glac_bin_area_annual[:, :, np.newaxis]
                             output_glac_bin_mass_annual_sim = (
