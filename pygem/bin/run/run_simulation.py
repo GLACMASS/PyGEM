@@ -1426,12 +1426,11 @@ def run(list_packed_vars):
                                 ds[0].volume_m3.values.T[:, :, np.newaxis] * pygem_prms['constants']['density_ice']
                             )
                         elif args.option_dynamics == 'IGM':
-                            # grab binned outputs from igm flowline-line diagnostics
-                            # note, transpose restructures (time, "distance"_along_flowline) -> ("distance"_along_flowline, time)
-                            output_glac_bin_area_annual_sim = diag_ds[0].area_m2.values.T[:, :, np.newaxis]
-                            output_glac_bin_icethickness_annual_sim = diag_ds[0].ice_thickness.values.T[:, :, np.newaxis]
+                            # grab "binned outputs" from igm flowline-line diagnostics
+                            output_glac_bin_area_annual_sim = diag.area_m2.values
+                            output_glac_bin_icethickness_annual_sim = diag.ice_thickness.values#.T[:, :, np.newaxis]
                             output_glac_bin_mass_annual_sim = (
-                                diag_ds[0].volume_m3.values.T[:, :, np.newaxis] * pygem_prms['constants']['density_ice']
+                                diag.volume_m3.values * pygem_prms['constants']['density_ice']
                             )
 
                         else:
@@ -1738,6 +1737,23 @@ def run(list_packed_vars):
                                 output_offglac_snowpack_steps_stats[:, 1]
                             )
 
+                    #FIXME add option to reshape output from flowline to 2d arrays for IGM
+                    if args.option_dynamics == 'IGM':
+                        # get nx and ny dimensions
+                        nx = diag.ice_thickness.shape[1]
+                        ny = diag.ice_thickness.shape[0]
+
+                        # reshape all variables in output_ds_all_states from 1d to 2d arrays
+                        for var_name in output_ds_all_stats.data_vars:
+                            var_data = output_ds_all_stats[var_name].values
+                            # reshape to (time, ny, nx)
+                            # make sure to perform reshape only for arrays with size > 1
+                            if var_data.size <= 1:
+                                continue
+                            var_data_2d = var_data.reshape((var_data.shape[0], ny, nx))
+                            output_ds_all_stats[var_name].values = var_data_2d
+
+
                     # export merged netcdf glacierwide stats
                     output_stats.set_fn(
                         output_stats.get_fn().replace('SETS', f'{nsims}sets') + args.outputfn_sfix + 'all.nc'
@@ -1844,41 +1860,56 @@ def run(list_packed_vars):
                         # populate dataset with stats from each variable of interest
                         output_ds_binned_stats['bin_distance'].values = output_glac_bin_dist[np.newaxis, :]
                         output_ds_binned_stats['bin_surface_h_initial'].values = surface_h_initial[np.newaxis, :]
-                        output_ds_binned_stats['bin_area_annual'].values = np.median(
-                            output_glac_bin_area_annual, axis=2
-                        )[np.newaxis, :, :]
-                        output_ds_binned_stats['bin_mass_annual'].values = np.median(
-                            output_glac_bin_mass_annual, axis=2
-                        )[np.newaxis, :, :]
-                        output_ds_binned_stats['bin_thick_annual'].values = np.median(
-                            output_glac_bin_icethickness_annual, axis=2
-                        )[np.newaxis, :, :]
-                        output_ds_binned_stats['bin_massbalclim_annual'].values = np.median(
-                            output_glac_bin_massbalclim_annual, axis=2
-                        )[np.newaxis, :, :]
-                        output_ds_binned_stats['bin_massbalclim'].values = np.median(
-                            output_glac_bin_massbalclim_steps, axis=2
-                        )[np.newaxis, :, :]
-                        if args.export_binned_components:
-                            output_ds_binned_stats['bin_accumulation'].values = np.median(
-                                output_glac_bin_acc_steps, axis=2
+
+                        if args.option_dynamics == 'IGM':
+                            # for IGM we dont have bins, so dont need to take median across bins
+                            print('IGM dynamics selected, skipping median calculation for binned stats')
+                            # output_ds_binned_stats['bin_area_annual'].values = output_glac_bin_area_annual
+                            # output_ds_binned_stats['bin_mass_annual'].values = output_glac_bin_mass_annual
+                            # output_ds_binned_stats['bin_thick_annual'].values = output_glac_bin_icethickness_annual
+                            # output_ds_binned_stats['bin_massbalclim_annual'].values = output_glac_bin_massbalclim_annual
+                            # output_ds_binned_stats['bin_massbalclim'].values = output_glac_bin_massbalclim_steps
+                            # if args.export_binned_components:
+                            #     output_ds_binned_stats['bin_accumulation'].values = output_glac_bin_acc_steps
+                            #     output_ds_binned_stats['bin_melt'].values = output_glac_bin_melt_steps
+                            #     output_ds_binned_stats['bin_refreeze'].values = output_glac_bin_refreeze_steps
+                        else:
+                            # output median across all simulations  
+                            output_ds_binned_stats['bin_area_annual'].values = np.median(
+                                output_glac_bin_area_annual, axis=2
                             )[np.newaxis, :, :]
-                            output_ds_binned_stats['bin_melt'].values = np.median(output_glac_bin_melt_steps, axis=2)[
-                                np.newaxis, :, :
-                            ]
-                            output_ds_binned_stats['bin_refreeze'].values = np.median(
-                                output_glac_bin_refreeze_steps, axis=2
-                            )[np.newaxis, :, :]
-                        if nsims > 1:
-                            output_ds_binned_stats['bin_mass_annual_mad'].values = median_abs_deviation(
+                            output_ds_binned_stats['bin_mass_annual'].values = np.median(
                                 output_glac_bin_mass_annual, axis=2
                             )[np.newaxis, :, :]
-                            output_ds_binned_stats['bin_thick_annual_mad'].values = median_abs_deviation(
+                            output_ds_binned_stats['bin_thick_annual'].values = np.median(
                                 output_glac_bin_icethickness_annual, axis=2
                             )[np.newaxis, :, :]
-                            output_ds_binned_stats['bin_massbalclim_annual_mad'].values = median_abs_deviation(
+                            output_ds_binned_stats['bin_massbalclim_annual'].values = np.median(
                                 output_glac_bin_massbalclim_annual, axis=2
                             )[np.newaxis, :, :]
+                            output_ds_binned_stats['bin_massbalclim'].values = np.median(
+                                output_glac_bin_massbalclim_steps, axis=2
+                            )[np.newaxis, :, :]
+                            if args.export_binned_components:
+                                output_ds_binned_stats['bin_accumulation'].values = np.median(
+                                    output_glac_bin_acc_steps, axis=2
+                                )[np.newaxis, :, :]
+                                output_ds_binned_stats['bin_melt'].values = np.median(output_glac_bin_melt_steps, axis=2)[
+                                    np.newaxis, :, :
+                                ]
+                                output_ds_binned_stats['bin_refreeze'].values = np.median(
+                                    output_glac_bin_refreeze_steps, axis=2
+                                )[np.newaxis, :, :]
+                            if nsims > 1:
+                                output_ds_binned_stats['bin_mass_annual_mad'].values = median_abs_deviation(
+                                    output_glac_bin_mass_annual, axis=2
+                                )[np.newaxis, :, :]
+                                output_ds_binned_stats['bin_thick_annual_mad'].values = median_abs_deviation(
+                                    output_glac_bin_icethickness_annual, axis=2
+                                )[np.newaxis, :, :]
+                                output_ds_binned_stats['bin_massbalclim_annual_mad'].values = median_abs_deviation(
+                                    output_glac_bin_massbalclim_annual, axis=2
+                                )[np.newaxis, :, :]
 
                         # export merged netcdf glacierwide stats
                         output_binned.set_fn(
