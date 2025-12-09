@@ -1737,22 +1737,6 @@ def run(list_packed_vars):
                                 output_offglac_snowpack_steps_stats[:, 1]
                             )
 
-                    #FIXME add option to reshape output from flowline to 2d arrays for IGM
-                    if args.option_dynamics == 'IGM':
-                        # get nx and ny dimensions
-                        nx = diag.ice_thickness.shape[1]
-                        ny = diag.ice_thickness.shape[0]
-
-                        # reshape all variables in output_ds_all_states from 1d to 2d arrays
-                        for var_name in output_ds_all_stats.data_vars:
-                            var_data = output_ds_all_stats[var_name].values
-                            # reshape to (time, ny, nx)
-                            # make sure to perform reshape only for arrays with size > 1
-                            if var_data.size <= 1:
-                                continue
-                            var_data_2d = var_data.reshape((var_data.shape[0], ny, nx))
-                            output_ds_all_stats[var_name].values = var_data_2d
-
 
                     # export merged netcdf glacierwide stats
                     output_stats.set_fn(
