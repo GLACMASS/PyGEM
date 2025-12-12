@@ -1163,14 +1163,13 @@ def run(list_packed_vars):
                         from types import SimpleNamespace
                         from pygem.output import glacierwide_stats  # import the class so we can call the function object
 
-                        # if debug:
-                        print('IGM DYNAMICS')
+                        if debug:
+                            print('IGM DYNAMICS')
 
                         #FIXME keeping all IGM-specifics here for now, some can move further up in run_simulation, and to config.yaml, later
                         igm_config_file = "/uio/hypatia/geofag-felles/projects/glacmass/henning/pygem/PyGEM/PyGEM-IGM/experiments/params.yaml" #move to config.yaml later
                         # igm_out_dir = "/uio/hypatia/geofag-felles/projects/glacmass/henning/pygem/PyGEM/PyGEM-IGM/outputs/IGM" #will be moved to config.yaml later
                         igm_out_dir = pygem_prms['root'] + "/Output/simulations/"  # may move "Output/stats2d/" to config.yaml later
-# PermissionError: [Errno 13] Permission denied: b'/uio/hypatia/geofag-felles/projects/glacmass/henning/pygem/Output/stats2d/11.01450_ERA5_HH2015_ba0_SETS_2000_2019_igm_out.nc'
 
                         slidingoption = "constant" # will be moved to config.yaml later
 
@@ -1198,16 +1197,10 @@ def run(list_packed_vars):
                         base_fn = (
                             output_stats.get_fn()
                         )  # should contain 'SETS' which is later used to replace with the specific iteration
-                        # output_stats.set_modelprms({key: modelprms_all[key][n_iter] for key in modelprms_all})
-                        # output_stats.set_fn(
-                        #     output_stats.get_fn().replace('SETS', f'{nsims}sets') + args.outputfn_sfix + 'all.nc'
-                        # )
-                        # output_stats.save_xr_ds()
                         print(f"IGM output filename string: base_fn = {base_fn}")
 
+                        ## Build filename for output directory
                         reg_str = str(glacier_rgi_table.O1Region).zfill(2)
-                        sim_climate_name = sim_climate_name
-                        sim_climate_scenario = sim_climate_scenario
 
                         # If the climate is one of the ERA/COAWST names, no scenario folder is added in the original method.
                         if sim_climate_name in ['ERA-Interim', 'ERA5', 'COAWST']:
@@ -1215,28 +1208,11 @@ def run(list_packed_vars):
                         else:
                             outdir = os.path.join(igm_out_dir, reg_str, sim_climate_name, sim_climate_scenario, 'stats2d') + '/'
 
-                        # If you want to actually create the directory (mirroring original behaviour)
+                        ## Create directory if doesn't exist 
                         os.makedirs(outdir, exist_ok=True)
 
-                        print("outdir:", outdir)
-
-
-                        # ## Similar to above, get the output directory
-                        # reg_str = str(glacier_rgi_table.O1Region).zfill(2)
-                        # # Minimal attributes that _set_outdir reads/writes (see output.py):
-                        # attrs = dict(
-                        #     outdir=igm_out_dir,  # same base that parent sets
-                        #     reg_str=reg_str,                                # region string, e.g. '01'
-                        #     sim_climate_name=sim_climate_name,                 # e.g. 'GCM_NAME' or 'ERA5'
-                        #     sim_climate_scenario=sim_climate_scenario,                # scenario or '' if not applicable
-                        # )
-                        # dummy = SimpleNamespace(**attrs)
-
-                        # # Call the function defined on the class, passing dummy as "self"
-                        # # This will append to dummy.outdir and create the directory on disk.
-                        # glacierwide_stats._set_outdir(dummy)
-
-                        # print("outdir:", dummy.outdir)
+                        if debug:
+                           print("outdir:", outdir)
 
                         # Create IGM evolution model
                         #FIXME: should we pass time_string into IGM_Model2D here, to make sure consistent naming of
@@ -1264,7 +1240,7 @@ def run(list_packed_vars):
                         print("Starting IGM simulation...")
                         # igm_simulation_output = distributed_ev_model.run_2D_until_and_store(
                         diag = ev_model.run_2D_until_and_store(
-                            ref_endyear,
+                            args.sim_endyear,
                             run_path=None,  #igm_out_dir + f"/igm_out_run2D_{time_string}.nc",
                             step=1,
                             grid=gdir.grid,
