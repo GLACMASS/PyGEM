@@ -16,10 +16,12 @@ pygem_prms = config_manager.read_config()   # NOTE: ensure that your root path i
                                             # the appropriate location. If any errors occur, check this first.
 rootpath=pygem_prms['root']
 
-
+glac_no = 08.00312 # Storbreen, Norway
 # glac_no = 08.01126 # Nigardsbreen, Norway
-glac_no = 11.01450 # Great Aletsch, Switzerland
+# glac_no = 11.01450 # Great Aletsch, Switzerland
 # glac_no = 11.00897 # Hintereisferner, Austria
+# glac_no = 15.03733 # Khumbu Glacier, Nepal
+#glac_no = [11.00897, 15.03733] # Hintereisferner, Austria and Khumbu Glacier, Nepal
 
 ref_startyear=2000
 ref_endyear=2019
@@ -59,8 +61,8 @@ def main():
 
     else: 
         # Nothing to be done, load stored calibration below
-        #print ("Using stored calibration for glacier RGI " + glac_no)
-        calibration_data_file = "/uio/hypatia/geofag-felles/projects/glacmass/data/PyGEM_input/calibration/11/11.01450-modelprms_dict.json"
+        glacier_str = format(glac_no, ".5f")
+        print ("Using stored calibration for glacier RGI " + glacier_str)
 
     if isprintcalibrationparameters:
         # check the output - the parameter dictionary output should now have an `HH2015` key
