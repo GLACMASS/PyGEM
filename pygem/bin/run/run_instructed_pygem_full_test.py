@@ -16,22 +16,33 @@ pygem_prms = config_manager.read_config()   # NOTE: ensure that your root path i
                                             # the appropriate location. If any errors occur, check this first.
 rootpath=pygem_prms['root']
 
-glac_no = 08.00312 # Storbreen, Norway
+#glac_no = 08.00312 # Storbreen, Norway
 # glac_no = 08.01126 # Nigardsbreen, Norway
 # glac_no = 11.01450 # Great Aletsch, Switzerland
 # glac_no = 11.00897 # Hintereisferner, Austria
-# glac_no = 15.03733 # Khumbu Glacier, Nepal
+glac_no = 15.03733 # Khumbu Glacier, Nepal
 #glac_no = [11.00897, 15.03733] # Hintereisferner, Austria and Khumbu Glacier, Nepal
 
-ref_startyear=2000
-ref_endyear=2019
-
+# Calibration options
 isruncalibration = False
 isprintcalibrationparameters = False
 option_calibration = "HH2015"
 
+# Dynamics options
 option_dynamics = "IGM"
-isrunsimulation = True
+
+# Historic simulation options
+isrunsimulationhistoric = False
+ref_startyear=2000
+ref_endyear=2019
+
+# Future simulation options
+isrunsimulationfuture = True
+sim_climate_name = 'CESM2'
+sim_climate_scenario = 'ssp245'
+sim_startyear = 2000
+sim_endyear = 2100
+
 
 def main():
 
@@ -76,7 +87,7 @@ def main():
 
         print(modelprms_dict[option_calibration])
 
-    if isrunsimulation == True:
+    if isrunsimulationhistoric == True:
         print("--- Running simulation...")
         try:
             # Call simulation script and pass arguments
@@ -102,7 +113,37 @@ def main():
 
     else: 
         # Nothing to be done, no simulation being run
-        print("No simulation run.")
+        print("No historic simulation run.")
+
+    if isrunsimulationfuture == True:
+        print("--- Running future simulation...")
+        try:
+            # Call simulation script and pass arguments
+            result = subprocess.run(
+                [sys.executable, pygem_config_dir + '/pygem/bin/run/run_simulation.py', 
+                '-rgi_glac_number', str(glac_no), 
+                '-sim_climate_name', sim_climate_name,
+                '-sim_climate_scenario', sim_climate_scenario,
+                '-sim_startyear', str(sim_startyear),
+                '-sim_endyear', str(sim_endyear),
+                '-option_calibration', option_calibration,
+                '-option_dynamics', option_dynamics],
+                check=True, 
+                text=True, 
+                capture_output=True
+            )
+            
+            # Print the output
+            print("Output from run_simulation.py:")
+            print(result.stdout)
+
+        except subprocess.CalledProcessError as e:
+            print("An error occurred while running run_simulation.py:")
+            print(e.stderr)
+
+    else: 
+        # Nothing to be done, no simulation being run
+        print("No future simulation run.")
 
 if __name__ == "__main__":
     main()
