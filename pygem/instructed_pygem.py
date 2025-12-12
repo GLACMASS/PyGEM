@@ -37,7 +37,7 @@ class IGM_Model2D(Model2D):
         ice_thick[:, -1] = 0
         return ice_thick
 
-    def __init__(self, bed_topo, config, init_ice_thick=None, dx=None, dy=None, mb_model=None, y0=0.0, mb_elev_feedback="annual", ice_thick_filter=filter_ice_border, mb_filter=None, x=None, y=None, out_dir=None, sliding_option="constant"):
+    def __init__(self, bed_topo, config, init_ice_thick=None, dx=None, dy=None, mb_model=None, y0=0.0, mb_elev_feedback="annual", ice_thick_filter=filter_ice_border, mb_filter=None, x=None, y=None, out_dir=None, file_string="out", sliding_option="constant"):
         """
          Initialize the IGM_Model2D class, which runs glacier evolution simulations
          using the ice-flow solver from IGM and the mass balance model from PyGEM.
@@ -47,6 +47,7 @@ class IGM_Model2D(Model2D):
          The constructor initializes the glacier model with the provided bed topography,
          initial ice thickness, grid resolution, mass balance model, and other parameters.
          It also sets up the necessary configurations for IGM and initializes the glacier state.
+         The output file names for IGM are constructed using the provided file_string parameter.
 
          The ice-flow dynamics are handled by IGM, while the mass balance is computed using
          the specified PyGEM mass balance model.
@@ -65,6 +66,7 @@ class IGM_Model2D(Model2D):
             mb_filter=mb_filter,
             #sliding_option=sliding_option,
             #out_dir=out_dir,
+            #file_string=file_string
         )
 
         """
@@ -164,14 +166,16 @@ class IGM_Model2D(Model2D):
 
 
         if out_dir != None:
-            current_time = datetime.now().strftime("%Y%m%d_%H%M%S") # get current time, for naming output files
+            # current_time = datetime.now().strftime("%Y%m%d_%H%M%S") # get current time, for naming output files
             # self.cfg.outputs.write_ncdf.output_file = out_dir + "/igm_out.nc"
-            self.cfg.outputs.write_ncdf.output_file = out_dir + "/igm_out_" + current_time + ".nc"
+            # self.cfg.outputs.write_ncdf.output_file = out_dir + "/igm_out_" + current_time + ".nc"
+            self.cfg.outputs.write_ncdf.output_file = out_dir + "/" + file_string + "igm_out.nc"
             self.cfg.outputs.write_ncdf.vars_to_save = ['topg', 'usurf', 'thk', 'smb',
-                                                        'velbar_mag', 'velsurf_mag', 'uvelsurf', 'vvelsurf',
+                                                        'velsurf_mag',
                                                         "divflux","slidingco",
             ]
-            self.cfg.outputs.write_ts.output_file = out_dir + "/igm_out_ts_" + current_time + ".nc"
+                                                        # 'velbar_mag', 'velsurf_mag', 'uvelsurf', 'vvelsurf',
+            self.cfg.outputs.write_ts.output_file = out_dir + "/" + file_string + "igm_out_ts.nc"
 
         igm_write.initialize(self.cfg, self.state)
         igm_write_ts.initialize(self.cfg, self.state)

@@ -24,7 +24,7 @@ import sys
 import time
 import warnings
 import traceback
-from datetime import datetime
+from datetime import datetime, timezone
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -969,6 +969,13 @@ def run(list_packed_vars):
                         if debug:
                             print('Loading glacier data for IGM dynamics')
 
+                        # Add ice thickness data to gdir
+                        if thickness_product == "millan_ice_thickness":
+                            #FIXME to be added
+                            print("Millan thickness product not yet fully implemented")
+                        if thickness_product == "consensus_ice_thickness":
+                            bedtopo.add_consensus_thickness(gdir)
+
                         # Load glacier data
                         with xr.open_dataset(gdir.get_filepath("gridded_data")) as ds:
                             ds = ds.load()
@@ -980,12 +987,6 @@ def run(list_packed_vars):
                         #Create pseudo flowline, and assign thickness and surface heights
                         fls = create_pseudo_flowline(thick.values, surface_h.values, gdir.grid.dx)
 
-                        # Add bed topography
-                        if thickness_product == "millan_ice_thickness":
-                            #FIXME to be added
-                            print("Millan thickness product not yet fully implemented")
-                        if thickness_product == "consensus_ice_thickness":
-                            bedtopo.add_consensus_thickness(gdir)
 
                     # ------ MODEL WITH EVOLVING AREA ------
                     # Create mass balance model
@@ -1159,14 +1160,84 @@ def run(list_packed_vars):
                     ##### IGM dynamical model        #####
                     ######################################
                     elif args.option_dynamics == 'IGM':
+                        from types import SimpleNamespace
+                        from pygem.output import glacierwide_stats  # import the class so we can call the function object
+
                         # if debug:
                         print('IGM DYNAMICS')
 
                         #FIXME keeping all IGM-specifics here for now, some can move further up in run_simulation, and to config.yaml, later
                         igm_config_file = "/uio/hypatia/geofag-felles/projects/glacmass/henning/pygem/PyGEM/PyGEM-IGM/experiments/params.yaml" #move to config.yaml later
-                        igm_out_dir = "/uio/hypatia/geofag-felles/projects/glacmass/henning/pygem/PyGEM/PyGEM-IGM/outputs/IGM" #will be moved to config.yaml later
+                        # igm_out_dir = "/uio/hypatia/geofag-felles/projects/glacmass/henning/pygem/PyGEM/PyGEM-IGM/outputs/IGM" #will be moved to config.yaml later
+                        igm_out_dir = pygem_prms['root'] + "/Output/simulations/"  # may move "Output/stats2d/" to config.yaml later
+# PermissionError: [Errno 13] Permission denied: b'/uio/hypatia/geofag-felles/projects/glacmass/henning/pygem/Output/stats2d/11.01450_ERA5_HH2015_ba0_SETS_2000_2019_igm_out.nc'
+
                         slidingoption = "constant" # will be moved to config.yaml later
-                        
+
+                        ## Create output stats object to get output filename 
+                        # this needs to be done here because IGM_Model2D writes to netcdf directly during the run
+                        # Instantiate dataset
+                        output_stats = output.glacierwide_stats(
+                            glacier_rgi_table=glacier_rgi_table,
+                            dates_table=dates_table,
+                            timestep=pygem_prms['time']['timestep'],
+                            nsims=1,
+                            sim_climate_name=sim_climate_name,
+                            sim_climate_scenario=sim_climate_scenario,
+                            realization=realization,
+                            modelprms=modelprms,
+                            ref_startyear=args.ref_startyear,
+                            ref_endyear=ref_endyear,
+                            sim_startyear=args.sim_startyear,
+                            sim_endyear=args.sim_endyear,
+                            option_calibration=args.option_calibration,
+                            option_bias_adjustment=args.option_bias_adjustment,
+                            option_dynamics=args.option_dynamics,
+                            extra_vars=args.export_extra_vars,
+                        )   
+                        base_fn = (
+                            output_stats.get_fn()
+                        )  # should contain 'SETS' which is later used to replace with the specific iteration
+                        # output_stats.set_modelprms({key: modelprms_all[key][n_iter] for key in modelprms_all})
+                        # output_stats.set_fn(
+                        #     output_stats.get_fn().replace('SETS', f'{nsims}sets') + args.outputfn_sfix + 'all.nc'
+                        # )
+                        # output_stats.save_xr_ds()
+                        print(f"IGM output filename string: base_fn = {base_fn}")
+
+                        reg_str = str(glacier_rgi_table.O1Region).zfill(2)
+                        sim_climate_name = sim_climate_name
+                        sim_climate_scenario = sim_climate_scenario
+
+                        # If the climate is one of the ERA/COAWST names, no scenario folder is added in the original method.
+                        if sim_climate_name in ['ERA-Interim', 'ERA5', 'COAWST']:
+                            outdir = os.path.join(igm_out_dir, reg_str, sim_climate_name, 'stats2d') + '/'
+                        else:
+                            outdir = os.path.join(igm_out_dir, reg_str, sim_climate_name, sim_climate_scenario, 'stats2d') + '/'
+
+                        # If you want to actually create the directory (mirroring original behaviour)
+                        os.makedirs(outdir, exist_ok=True)
+
+                        print("outdir:", outdir)
+
+
+                        # ## Similar to above, get the output directory
+                        # reg_str = str(glacier_rgi_table.O1Region).zfill(2)
+                        # # Minimal attributes that _set_outdir reads/writes (see output.py):
+                        # attrs = dict(
+                        #     outdir=igm_out_dir,  # same base that parent sets
+                        #     reg_str=reg_str,                                # region string, e.g. '01'
+                        #     sim_climate_name=sim_climate_name,                 # e.g. 'GCM_NAME' or 'ERA5'
+                        #     sim_climate_scenario=sim_climate_scenario,                # scenario or '' if not applicable
+                        # )
+                        # dummy = SimpleNamespace(**attrs)
+
+                        # # Call the function defined on the class, passing dummy as "self"
+                        # # This will append to dummy.outdir and create the directory on disk.
+                        # glacierwide_stats._set_outdir(dummy)
+
+                        # print("outdir:", dummy.outdir)
+
                         # Create IGM evolution model
                         #FIXME: should we pass time_string into IGM_Model2D here, to make sure consistent naming of
                         # output netcdf files?
@@ -1180,7 +1251,8 @@ def run(list_packed_vars):
                             mb_filter=mask,
                             x=ds.x,
                             y=ds.y,
-                            out_dir=igm_out_dir,
+                            out_dir=outdir,
+                            file_string=base_fn,
                             sliding_option=slidingoption,   
                         )
 
@@ -1916,9 +1988,9 @@ def run(list_packed_vars):
             # Capture full traceback text
             tb_text = traceback.format_exc()
 
-            # Optional: also capture a short repr of the exception and a timestamp
+            # Also capture a short repr of the exception and a timestamp
             header = (
-                f"{datetime.utcnow().isoformat()}Z\n"
+                f"{datetime.now(timezone.utc).isoformat()}Z\n"
                 f"{glacier_str} failed to complete simulation\n"
                 f"Exception: {repr(err)}\n\n"
             )
@@ -1927,14 +1999,6 @@ def run(list_packed_vars):
                 text_file.write(header)
                 text_file.write("Full traceback (most recent call last):\n")
                 text_file.write(tb_text)
-
-                # If you want to dump locals from this scope (be careful, may be large/privacy):
-                # text_file.write("\nLocals at except-block:\n")
-                # for k, v in locals().items():
-                #     try:
-                #         text_file.write(f"{k} = {repr(v)}\n")
-                #     except Exception:
-                #         text_file.write(f"{k} = <unrepr-able>\n")
 
 # %% PARALLEL PROCESSING
 def main():
