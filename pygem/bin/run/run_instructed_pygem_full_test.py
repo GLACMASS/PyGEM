@@ -16,32 +16,40 @@ pygem_prms = config_manager.read_config()   # NOTE: ensure that your root path i
                                             # the appropriate location. If any errors occur, check this first.
 rootpath=pygem_prms['root']
 
-#glac_no = 08.00312 # Storbreen, Norway
+# Individual glacier simulation(s)
+# glac_no = 08.00312 # Storbreen, Norway
 # glac_no = 08.01126 # Nigardsbreen, Norway
 # glac_no = 11.01450 # Great Aletsch, Switzerland
 # glac_no = 11.00897 # Hintereisferner, Austria
 glac_no = 15.03733 # Khumbu Glacier, Nepal
-#glac_no = [11.00897, 15.03733] # Hintereisferner, Austria and Khumbu Glacier, Nepal
+# glac_no = [11.00897, 15.03733] # Hintereisferner, Austria and Khumbu Glacier, Nepal
+
+#Regional simulation - FIXME: not implemented yet
+# glac_no = ''
+# rgi_region01 = '06' # Specify to run entire RGI region, otherwise set to None
+# rgi_region02 = 'all'
+# min_glac_area_km2 = 200 # Minimum glacier area in km2 for inclusion when specifying rgi_region01
 
 # Calibration options
-isruncalibration = False
+isruncalibration = True
 isprintcalibrationparameters = False
 option_calibration = "HH2015"
+ref_startyear=2000
+ref_endyear=2019
+ref_climate_name = 'ERA5'
 
 # Dynamics options
 option_dynamics = "IGM"
 
-# Historic simulation options
-isrunsimulationhistoric = False
-ref_startyear=2000
-ref_endyear=2019
-
-# Future simulation options
+# Simulation options
+isrunsimulationhistoric = True
 isrunsimulationfuture = True
-sim_climate_name = 'CESM2'
+
+climate_names = ['ERA5','CESM2'] #historic, future
+start_years=[2000, 2020]         #historic, future
+end_years=[2019, 2100]           #historic, future
+
 sim_climate_scenario = 'ssp245'
-sim_startyear = 2000
-sim_endyear = 2100
 
 
 def main():
@@ -57,6 +65,8 @@ def main():
                 '-ref_startyear', str(ref_startyear), 
                 '-ref_endyear', str(ref_endyear), 
                 '-option_calibration', option_calibration],
+                # '-rgi_region01', str(rgi_region01),
+                # '-rgi_region02', str(rgi_region02),
                 check=True, 
                 text=True, 
                 capture_output=True
@@ -94,10 +104,13 @@ def main():
             result = subprocess.run(
                 [sys.executable, pygem_config_dir + '/pygem/bin/run/run_simulation.py', 
                 '-rgi_glac_number', str(glac_no), 
-                '-ref_startyear', str(ref_startyear), 
-                '-ref_endyear', str(ref_endyear),
+                '-sim_startyear', str(start_years[0]), 
+                '-sim_endyear', str(end_years[0]),
+                '-sim_climate_name', climate_names[0],
                 '-option_calibration', option_calibration,
                 '-option_dynamics', option_dynamics],
+                # '-rgi_region01', str(rgi_region01),
+                # '-rgi_region02', str(rgi_region02),
                 check=True, 
                 text=True, 
                 capture_output=True
@@ -122,12 +135,14 @@ def main():
             result = subprocess.run(
                 [sys.executable, pygem_config_dir + '/pygem/bin/run/run_simulation.py', 
                 '-rgi_glac_number', str(glac_no), 
-                '-sim_climate_name', sim_climate_name,
+                '-sim_startyear', str(start_years[1]),
+                '-sim_endyear', str(end_years[1]),
+                '-sim_climate_name', climate_names[1],
                 '-sim_climate_scenario', sim_climate_scenario,
-                '-sim_startyear', str(sim_startyear),
-                '-sim_endyear', str(sim_endyear),
                 '-option_calibration', option_calibration,
                 '-option_dynamics', option_dynamics],
+                # '-rgi_region01', str(rgi_region01),
+                # '-rgi_region02', str(rgi_region02),
                 check=True, 
                 text=True, 
                 capture_output=True
