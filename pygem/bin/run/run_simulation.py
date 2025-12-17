@@ -23,6 +23,8 @@ import os
 import sys
 import time
 import warnings
+import traceback
+from datetime import datetime, timezone
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -43,12 +45,14 @@ pygem_prms = config_manager.read_config()
 from oggm import cfg, tasks, utils
 from oggm.core.flowline import FluxBasedModel, SemiImplicitModel
 from oggm.core.massbalance import apparent_mb_from_any_mb
+from oggm.shop import bedtopo
 
 import pygem.gcmbiasadj as gcmbiasadj
 import pygem.pygem_modelsetup as modelsetup
 from pygem import class_climate, output
 from pygem.glacierdynamics import MassRedistributionCurveModel
-from pygem.instructed_pygem import IGM_Model2D #is this import needed here?
+from pygem.instructed_pygem import IGM_Model2D
+from pygem.interface2d import create_pseudo_flowline
 from pygem.massbalance import PyGEMMassBalance
 from pygem.oggm_compat import (
     get_spinup_flowlines,
@@ -885,7 +889,7 @@ def run(list_packed_vars):
                         )
 
                     # ----- ICE THICKNESS INVERSION using OGGM -----
-                    if args.option_dynamics is not None:
+                    if args.option_dynamics in ['OGGM', 'MassRedistributionCurves']:
                         # Apply inversion_filter on mass balance with debris to avoid negative flux
                         if pygem_prms['mb']['include_debris']:
                             inversion_filter = True
@@ -957,16 +961,57 @@ def run(list_packed_vars):
 
                     # Record initial surface h for overdeepening calculations
                     surface_h_initial = nfls[0].surface_h
+                    
+                    if args.option_dynamics == 'IGM':
+                        # Set thickness product (to be added to config.yaml later)
+                        thickness_product = "consensus_ice_thickness"  # 'consensus_ice_thickness' (Farinotti et al. 2019) or 'millan_ice_thickness' (Millan et al 2022)
+
+                        if debug:
+                            print('Loading glacier data for IGM dynamics')
+
+                        # Add ice thickness data to gdir
+                        if thickness_product == "millan_ice_thickness":
+                            #FIXME to be added
+                            print("Millan thickness product not yet fully implemented")
+                        if thickness_product == "consensus_ice_thickness":
+                            bedtopo.add_consensus_thickness(gdir)
+
+                        # Load glacier data
+                        with xr.open_dataset(gdir.get_filepath("gridded_data")) as ds:
+                            ds = ds.load()
+                        thick = ds[thickness_product].where(~ds[thickness_product].isnull(), 0)
+                        surface_h = ds.topo
+                        bed = ds.topo - thick
+                        mask = ds.glacier_mask.data == 1
+                        
+                        #Create pseudo flowline, and assign thickness and surface heights
+                        fls = create_pseudo_flowline(thick.values, surface_h.values, gdir.grid.dx)
+
 
                     # ------ MODEL WITH EVOLVING AREA ------
-                    # Mass balance model
-                    mbmod = PyGEMMassBalance(
-                        gdir,
-                        modelprms,
-                        glacier_rgi_table,
-                        fls=nfls,
-                        option_areaconstant=False,
-                    )
+                    # Create mass balance model
+                    if args.option_dynamics == 'IGM': #FIXME: possible to merge with PyGEMMassBalance block below?
+                        # if debug:
+                        print('Creating SMB model for IGM glacier dynamics')
+                        # Create mass balance model IGM dynamics (pseudo-flowline)
+                        mbmod = PyGEMMassBalance(
+                            gdir,
+                            modelprms,
+                            glacier_rgi_table,
+                            fls=fls,
+                            fl_id=0,
+                        )
+                    else:
+                        # Mass balance model for use with flowline-based dynamics
+                        print('Creating SMB model for flowline-based dynamics')
+                        mbmod = PyGEMMassBalance(
+                            gdir,
+                            modelprms,
+                            glacier_rgi_table,
+                            fls=nfls,
+                            option_areaconstant=False,
+                        )
+
 
                     ######################################
                     ### OGGM dynamical evolution model ###
@@ -1112,6 +1157,171 @@ def run(list_packed_vars):
                                 )
 
                     ######################################
+                    ##### IGM dynamical model        #####
+                    ######################################
+                    elif args.option_dynamics == 'IGM':
+                        from types import SimpleNamespace
+                        from pygem.output import glacierwide_stats  # import the class so we can call the function object
+
+                        if debug:
+                            print('IGM DYNAMICS')
+
+                        #FIXME keeping all IGM-specifics here for now, some can move further up in run_simulation, and to config.yaml, later
+                        igm_config_file = "/uio/hypatia/geofag-felles/projects/glacmass/henning/pygem/PyGEM/PyGEM-IGM/experiments/params.yaml" #move to config.yaml later
+                        # igm_out_dir = "/uio/hypatia/geofag-felles/projects/glacmass/henning/pygem/PyGEM/PyGEM-IGM/outputs/IGM" #will be moved to config.yaml later
+                        igm_out_dir = pygem_prms['root'] + "/Output/simulations/"  # may move "Output/stats2d/" to config.yaml later
+
+                        slidingoption = "constant" # will be moved to config.yaml later
+
+                        ## Create output stats object to get output filename 
+                        # this needs to be done here because IGM_Model2D writes to netcdf directly during the run
+                        # Instantiate dataset
+                        output_stats = output.glacierwide_stats(
+                            glacier_rgi_table=glacier_rgi_table,
+                            dates_table=dates_table,
+                            timestep=pygem_prms['time']['timestep'],
+                            nsims=1,
+                            sim_climate_name=sim_climate_name,
+                            sim_climate_scenario=sim_climate_scenario,
+                            realization=realization,
+                            modelprms=modelprms,
+                            ref_startyear=args.ref_startyear,
+                            ref_endyear=ref_endyear,
+                            sim_startyear=args.sim_startyear,
+                            sim_endyear=args.sim_endyear,
+                            option_calibration=args.option_calibration,
+                            option_bias_adjustment=args.option_bias_adjustment,
+                            option_dynamics=args.option_dynamics,
+                            extra_vars=args.export_extra_vars,
+                        )   
+                        base_fn = (
+                            output_stats.get_fn()
+                        )  # should contain 'SETS' which is later used to replace with the specific iteration
+                        print(f"IGM output filename string: base_fn = {base_fn}")
+
+                        ## Build filename for output directory
+                        reg_str = str(glacier_rgi_table.O1Region).zfill(2)
+
+                        # If the climate is one of the ERA/COAWST names, no scenario folder is added in the original method.
+                        if sim_climate_name in ['ERA-Interim', 'ERA5', 'COAWST']:
+                            outdir = os.path.join(igm_out_dir, reg_str, sim_climate_name, 'stats2d') + '/'
+                        else:
+                            outdir = os.path.join(igm_out_dir, reg_str, sim_climate_name, sim_climate_scenario, 'stats2d') + '/'
+
+                        ## Create directory if doesn't exist 
+                        os.makedirs(outdir, exist_ok=True)
+
+                        if debug:
+                           print("outdir:", outdir)
+
+                        # Create IGM evolution model
+                        #FIXME: should we pass time_string into IGM_Model2D here, to make sure consistent naming of
+                        # output netcdf files?
+                        ev_model = IGM_Model2D(
+                            bed.data,
+                            init_ice_thick=thick.data,
+                            config=igm_config_file,
+                            dx=gdir.grid.dx,
+                            mb_model=mbmod,
+                            y0=args.sim_startyear,
+                            mb_filter=mask,
+                            x=ds.x,
+                            y=ds.y,
+                            out_dir=outdir,
+                            file_string=base_fn,
+                            sliding_option=slidingoption,   
+                        )
+
+                        # Run the model
+                        start_time = datetime.now() # get current time, for calculating computation time
+                        time_string = start_time.strftime("%Y%m%d_%H%M%S") # get time string, for naming of netcdf output
+
+                        # print("Starting IGM simulation (stderr)", file=sys.stderr, flush=True)
+                        print("Starting IGM simulation...")
+                        # igm_simulation_output = distributed_ev_model.run_2D_until_and_store(
+                        diag = ev_model.run_2D_until_and_store(
+                            args.sim_endyear,
+                            run_path=None,  #igm_out_dir + f"/igm_out_run2D_{time_string}.nc",
+                            step=1,
+                            grid=gdir.grid,
+                            print_stdout="My IGM run",
+                        )
+                        # _, diag = ev_model.run_until_and_store(args.sim_endyear + 1)
+
+
+                        # #    print('shape of volume:', ev_model.mb_model.glac_wide_volume_annual.shape, diag.volume_m3.shape)
+                        ev_model.mb_model.glac_wide_volume_annual = diag.volume_m3.values
+                        ev_model.mb_model.glac_wide_area_annual = diag.area_m2.values
+
+                        #calculate computation time in seconds, convert to minutes
+                        computation_time = datetime.now()-start_time
+                        computation_time = computation_time.total_seconds() / 60.0
+
+                        #Print computation time in minutes (can be added to IGM output .nc file later)
+                        print(f"IGM computation time: {computation_time:.3f} min")
+
+
+                        # time
+                        yearly_time = np.arange(np.floor(args.sim_startyear), np.floor(args.sim_endyear) + 1)
+
+                        # yrs, months = utils.floatyear_to_date(monthly_time)
+                        # cyrs, cmonths = utils.hydrodate_to_calendardate(yrs, months, start_month=sm)
+
+                        # init output
+                        ny = len(yearly_time)
+                        # if ny == 1:
+                        #     yrs = [yrs]
+                        #     cyrs = [cyrs]
+                        #     months = [months]
+                        #     cmonths = [cmonths]
+                        # nm = len(monthly_time)
+                        # sects = [(np.zeros((ny, fl.nx)) * np.nan) for fl in self.fls]
+                        # widths = [(np.zeros((ny, fl.nx)) * np.nan) for fl in self.fls]
+                        # bucket = [(np.zeros(nyV) * np.nan) for _ in self.fls]
+                        ## Create output dataset
+                        diag_ds = xr.Dataset()
+
+                        # Global attributes
+                        diag_ds.attrs['description'] = 'IGM model output'
+                        diag_ds.attrs['calendar'] = '365-day no leap'
+                        #diag_ds.attrs['creation_date'] = strftime('%Y-%m-%d %H:%M:%S', gmtime())
+                        #diag_ds.attrs['hemisphere'] = self.mb_model.hemisphere
+
+                        # Coordinates
+                        diag_ds.coords['time'] = ('time', yearly_time)
+                        # diag_ds.coords['calendar_year'] = ('time', cyrs)
+                        # diag_ds.coords['calendar_month'] = ('time', cmonths)
+
+                        # diag_ds['time'].attrs['description'] = 'Floating hydrological year'
+                        # diag_ds['calendar_year'].attrs['description'] = 'Calendar year'
+                        # diag_ds['calendar_month'].attrs['description'] = 'Calendar month'
+
+                        # Variables and attributes
+                        diag_ds['volume_m3'] = ('time', np.zeros(ny) * np.nan)
+                        diag_ds['volume_m3'].attrs['description'] = 'Total glacier volume'
+                        diag_ds['volume_m3'].attrs['unit'] = 'm 3'
+                        diag_ds['area_m2'] = ('time', np.zeros(ny) * np.nan)
+                        diag_ds['area_m2'].attrs['description'] = 'Total glacier area'
+                        diag_ds['area_m2'].attrs['unit'] = 'm 2'
+                        # diag_ds['length_m'] = ('time', np.zeros(nm) * np.nan)
+
+                        # diag_ds['length_m'].attrs['description'] = 'Glacier length'
+
+                        # diag_ds['length_m'].attrs['unit'] = 'm 3'
+
+                        # diag_ds['ela_m'] = ('time', np.zeros(nm) * np.nan)
+
+                        # diag_ds['ela_m'].attrs['description'] = 'Annual Equilibrium Line Altitude  (ELA)'
+
+                        # diag_ds['ela_m'].attrs['unit'] = 'm a.s.l'
+
+                        # Add the data for volume_m3 and area_m2 to the diag_ds output
+                        diag_ds['volume_m3'].data = diag.volume_m3.values
+                        diag_ds['area_m2'].data = diag.area_m2.values
+                        #diag_ds['length_m'].data = diag.length.values
+
+
+                    ######################################
                     ######### no dynamical model #########
                     ######################################
                     elif args.option_dynamics is None:
@@ -1219,23 +1429,41 @@ def run(list_packed_vars):
                         output_glac_massbaltotal_steps[:, n_iter] = mbmod.glac_wide_massbaltotal
                         output_glac_runoff_steps[:, n_iter] = mbmod.glac_wide_runoff
                         output_glac_snowline_steps[:, n_iter] = mbmod.glac_wide_snowline
-                        output_glac_area_annual[:, n_iter] = diag.area_m2.values
-                        output_glac_mass_annual[:, n_iter] = (
-                            diag.volume_m3.values * pygem_prms['constants']['density_ice']
-                        )
-                        output_glac_mass_bsl_annual[:, n_iter] = (
-                            diag.volume_bsl_m3.values * pygem_prms['constants']['density_ice']
-                        )
-                        output_glac_mass_change_ignored_annual[:-1, n_iter] = (
-                            mbmod.glac_wide_volume_change_ignored_annual * pygem_prms['constants']['density_ice']
-                        )
+                        # print("output_glac_area_annual.shape =", output_glac_area_annual.shape)
+                        # print("n_iter =", n_iter)
+                        # print("diag.area_m2.values.shape =", diag.area_m2.values.shape)
+
+                        # special treatment for IGM, which does not have the final year output in diag. FIXME?
+                        if args.option_dynamics == 'IGM':
+                            output_glac_area_annual[:-1, n_iter] = diag.area_m2.values
+                            output_glac_mass_annual[:-1, n_iter] = (
+                                diag.volume_m3.values * pygem_prms['constants']['density_ice']
+                            )
+                            # output_glac_mass_bsl_annual[:-1, n_iter] = (
+                            #     diag.volume_bsl_m3.values * pygem_prms['constants']['density_ice']
+                            # )
+                            output_glac_mass_change_ignored_annual[:-1, n_iter] = (
+                                mbmod.glac_wide_volume_change_ignored_annual * pygem_prms['constants']['density_ice']
+                            )
+                        else:
+                            output_glac_area_annual[:, n_iter] = diag.area_m2.values
+                            output_glac_mass_annual[:, n_iter] = (
+                                diag.volume_m3.values * pygem_prms['constants']['density_ice']
+                            )
+                            output_glac_mass_bsl_annual[:, n_iter] = (
+                                diag.volume_bsl_m3.values * pygem_prms['constants']['density_ice']
+                            )
+                            output_glac_mass_change_ignored_annual[:-1, n_iter] = (
+                                mbmod.glac_wide_volume_change_ignored_annual * pygem_prms['constants']['density_ice']
+                            )
+                        
                         output_glac_ELA_annual[:, n_iter] = mbmod.glac_wide_ELA_annual
                         output_offglac_prec_steps[:, n_iter] = mbmod.offglac_wide_prec
-
                         output_offglac_refreeze_steps[:, n_iter] = mbmod.offglac_wide_refreeze
                         output_offglac_melt_steps[:, n_iter] = mbmod.offglac_wide_melt
                         output_offglac_snowpack_steps[:, n_iter] = mbmod.offglac_wide_snowpack
                         output_offglac_runoff_steps[:, n_iter] = mbmod.offglac_wide_runoff
+
                         # binned ouputs
                         if args.option_dynamics == 'OGGM':
                             # grab binned outputs from oggm flowline diagnostics
@@ -1245,6 +1473,14 @@ def run(list_packed_vars):
                             output_glac_bin_mass_annual_sim = (
                                 ds[0].volume_m3.values.T[:, :, np.newaxis] * pygem_prms['constants']['density_ice']
                             )
+                        elif args.option_dynamics == 'IGM':
+                            # grab "binned outputs" from igm flowline-line diagnostics
+                            output_glac_bin_area_annual_sim = diag.area_m2.values
+                            output_glac_bin_icethickness_annual_sim = diag.ice_thickness.values#.T[:, :, np.newaxis]
+                            output_glac_bin_mass_annual_sim = (
+                                diag.volume_m3.values * pygem_prms['constants']['density_ice']
+                            )
+
                         else:
                             output_glac_bin_area_annual_sim = mbmod.glac_bin_area_annual[:, :, np.newaxis]
                             output_glac_bin_mass_annual_sim = (
@@ -1549,6 +1785,7 @@ def run(list_packed_vars):
                                 output_offglac_snowpack_steps_stats[:, 1]
                             )
 
+
                     # export merged netcdf glacierwide stats
                     output_stats.set_fn(
                         output_stats.get_fn().replace('SETS', f'{nsims}sets') + args.outputfn_sfix + 'all.nc'
@@ -1655,41 +1892,56 @@ def run(list_packed_vars):
                         # populate dataset with stats from each variable of interest
                         output_ds_binned_stats['bin_distance'].values = output_glac_bin_dist[np.newaxis, :]
                         output_ds_binned_stats['bin_surface_h_initial'].values = surface_h_initial[np.newaxis, :]
-                        output_ds_binned_stats['bin_area_annual'].values = np.median(
-                            output_glac_bin_area_annual, axis=2
-                        )[np.newaxis, :, :]
-                        output_ds_binned_stats['bin_mass_annual'].values = np.median(
-                            output_glac_bin_mass_annual, axis=2
-                        )[np.newaxis, :, :]
-                        output_ds_binned_stats['bin_thick_annual'].values = np.median(
-                            output_glac_bin_icethickness_annual, axis=2
-                        )[np.newaxis, :, :]
-                        output_ds_binned_stats['bin_massbalclim_annual'].values = np.median(
-                            output_glac_bin_massbalclim_annual, axis=2
-                        )[np.newaxis, :, :]
-                        output_ds_binned_stats['bin_massbalclim'].values = np.median(
-                            output_glac_bin_massbalclim_steps, axis=2
-                        )[np.newaxis, :, :]
-                        if args.export_binned_components:
-                            output_ds_binned_stats['bin_accumulation'].values = np.median(
-                                output_glac_bin_acc_steps, axis=2
+
+                        if args.option_dynamics == 'IGM':
+                            # for IGM we dont have bins, so dont need to take median across bins
+                            print('IGM dynamics selected, skipping median calculation for binned stats')
+                            # output_ds_binned_stats['bin_area_annual'].values = output_glac_bin_area_annual
+                            # output_ds_binned_stats['bin_mass_annual'].values = output_glac_bin_mass_annual
+                            # output_ds_binned_stats['bin_thick_annual'].values = output_glac_bin_icethickness_annual
+                            # output_ds_binned_stats['bin_massbalclim_annual'].values = output_glac_bin_massbalclim_annual
+                            # output_ds_binned_stats['bin_massbalclim'].values = output_glac_bin_massbalclim_steps
+                            # if args.export_binned_components:
+                            #     output_ds_binned_stats['bin_accumulation'].values = output_glac_bin_acc_steps
+                            #     output_ds_binned_stats['bin_melt'].values = output_glac_bin_melt_steps
+                            #     output_ds_binned_stats['bin_refreeze'].values = output_glac_bin_refreeze_steps
+                        else:
+                            # output median across all simulations  
+                            output_ds_binned_stats['bin_area_annual'].values = np.median(
+                                output_glac_bin_area_annual, axis=2
                             )[np.newaxis, :, :]
-                            output_ds_binned_stats['bin_melt'].values = np.median(output_glac_bin_melt_steps, axis=2)[
-                                np.newaxis, :, :
-                            ]
-                            output_ds_binned_stats['bin_refreeze'].values = np.median(
-                                output_glac_bin_refreeze_steps, axis=2
-                            )[np.newaxis, :, :]
-                        if nsims > 1:
-                            output_ds_binned_stats['bin_mass_annual_mad'].values = median_abs_deviation(
+                            output_ds_binned_stats['bin_mass_annual'].values = np.median(
                                 output_glac_bin_mass_annual, axis=2
                             )[np.newaxis, :, :]
-                            output_ds_binned_stats['bin_thick_annual_mad'].values = median_abs_deviation(
+                            output_ds_binned_stats['bin_thick_annual'].values = np.median(
                                 output_glac_bin_icethickness_annual, axis=2
                             )[np.newaxis, :, :]
-                            output_ds_binned_stats['bin_massbalclim_annual_mad'].values = median_abs_deviation(
+                            output_ds_binned_stats['bin_massbalclim_annual'].values = np.median(
                                 output_glac_bin_massbalclim_annual, axis=2
                             )[np.newaxis, :, :]
+                            output_ds_binned_stats['bin_massbalclim'].values = np.median(
+                                output_glac_bin_massbalclim_steps, axis=2
+                            )[np.newaxis, :, :]
+                            if args.export_binned_components:
+                                output_ds_binned_stats['bin_accumulation'].values = np.median(
+                                    output_glac_bin_acc_steps, axis=2
+                                )[np.newaxis, :, :]
+                                output_ds_binned_stats['bin_melt'].values = np.median(output_glac_bin_melt_steps, axis=2)[
+                                    np.newaxis, :, :
+                                ]
+                                output_ds_binned_stats['bin_refreeze'].values = np.median(
+                                    output_glac_bin_refreeze_steps, axis=2
+                                )[np.newaxis, :, :]
+                            if nsims > 1:
+                                output_ds_binned_stats['bin_mass_annual_mad'].values = median_abs_deviation(
+                                    output_glac_bin_mass_annual, axis=2
+                                )[np.newaxis, :, :]
+                                output_ds_binned_stats['bin_thick_annual_mad'].values = median_abs_deviation(
+                                    output_glac_bin_icethickness_annual, axis=2
+                                )[np.newaxis, :, :]
+                                output_ds_binned_stats['bin_massbalclim_annual_mad'].values = median_abs_deviation(
+                                    output_glac_bin_massbalclim_annual, axis=2
+                                )[np.newaxis, :, :]
 
                         # export merged netcdf glacierwide stats
                         output_binned.set_fn(
@@ -1697,17 +1949,32 @@ def run(list_packed_vars):
                         )
                         output_binned.save_xr_ds()
 
+        # LOG FAILURE
         except Exception as err:
+
             # LOG FAILURE
             fail_fp = pygem_prms['root'] + '/Output/simulations/failed/' + reg_str + '/' + sim_climate_name + '/'
             if sim_climate_name not in ['ERA5', 'COAWST']:
                 fail_fp += sim_climate_scenario + '/'
-            if not os.path.exists(fail_fp):
-                os.makedirs(fail_fp, exist_ok=True)
-            txt_fn_fail = glacier_str + '-sim_failed.txt'
-            with open(fail_fp + txt_fn_fail, 'w') as text_file:
-                text_file.write(glacier_str + f' failed to complete simulation: {err}')
+            os.makedirs(fail_fp, exist_ok=True)
 
+            txt_fn_fail = glacier_str + '-sim_failed.txt'
+            fail_path = os.path.join(fail_fp, txt_fn_fail)
+
+            # Capture full traceback text
+            tb_text = traceback.format_exc()
+
+            # Also capture a short repr of the exception and a timestamp
+            header = (
+                f"{datetime.now(timezone.utc).isoformat()}Z\n"
+                f"{glacier_str} failed to complete simulation\n"
+                f"Exception: {repr(err)}\n\n"
+            )
+
+            with open(fail_path, 'w') as text_file:
+                text_file.write(header)
+                text_file.write("Full traceback (most recent call last):\n")
+                text_file.write(tb_text)
 
 # %% PARALLEL PROCESSING
 def main():

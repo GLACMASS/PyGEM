@@ -175,7 +175,7 @@ class Model2D(object):
             # We need to reset all
             self._mb_current_date = date
 
-            fls = create_pseudo_flowline(self.ice_thick, self.surface_h)
+            fls = create_pseudo_flowline(self.ice_thick, self.surface_h, self.dx)
 
             _mb = self._mb_call(self.surface_h.flatten(), year=self.yr, fl_id=0, fls=fls)
             _mb = _mb.reshape((self.ny, self.nx))
@@ -266,10 +266,10 @@ class Model2D(object):
         # array of years to store the output
         yrs = np.arange(np.floor(self.yr), np.floor(ye) + 1, step)
 
-        # array to store the ice thickness (nyrs,ny,nx)
+        # arrays to store the model output (nyrs,ny,nx)
         out_thick = np.zeros((len(yrs), self.ny, self.nx))
-
         out_vol = np.zeros(len(yrs))
+        out_area = np.zeros(len(yrs))
 
         # time loop
         for i, yr in enumerate(yrs):
@@ -277,16 +277,16 @@ class Model2D(object):
             if print_stdout and (yr / 10) == int(yr / 10):
                 print("{}: year {} of {}, " "max thick {:.1f}m".format(print_stdout, int(yr), int(ye), self.ice_thick.max()), end="\r", flush=True)
             self.run_until(yr, stop_if_border=stop_if_border)
-            # store the ice thickness in the output array
+            # store the model variables in the output arrays
             out_thick[i, :, :] = self.ice_thick
             out_vol[i] = self.volume_km3
+            out_area[i] = self.area_km2
 
         run_ds = grid.to_dataset() if grid else xr.Dataset()
         run_ds["ice_thickness"] = xr.DataArray(out_thick, dims=["time", "y", "x"], coords={"time": yrs})
-
         run_ds["bed_topo"] = xr.DataArray(self.bed_topo, dims=["y", "x"])
-
-        run_ds["vol"] = xr.DataArray(out_vol)
+        run_ds["volume_m3"] = xr.DataArray(out_vol, dims=["time"], coords={"time": yrs})
+        run_ds["area_m2"] = xr.DataArray(out_area, dims=["time"], coords={"time": yrs})
 
         # write output dataset to netcdf
         if run_path is not None:
@@ -299,18 +299,35 @@ class Model2D(object):
         return run_ds
 
 
-def create_pseudo_flowline(thk_2d, surface_h_2d):
+def create_pseudo_flowline(thk_2d, surface_h_2d, dx):
     # This function creates an object that mimics a OGGM flowline from 2D input data
     # No information is lost as all grid points are included in the pseudo flowline object
+    """
+    Parameters
+    ----------------
+    thk_2d - 2d thickness (2d array)
+    surface_h_2d - 2d ice-surface height (2d array)
+    dx - grid resolution in meters (int)
+
+    Returns
+    -------
+    igm_fls : namespace
+        the pseudo flowline object
+    """
+
+    # Create pseudo-flowline
     igm_fls = []
     igm_fl = {}
     igm_fls.append(igm_fl)
+
+    # Go from 2d arrays to 1d arrays
     igm_fl["thick"] = thk_2d.flatten()
     igm_fl["surface_h"] = surface_h_2d.flatten()
-    igm_fl["widths_m"] = np.full_like(igm_fl["thick"], 100)
-    igm_fl["dx_meter"] = np.full_like(igm_fl["thick"], 100)
-    igm_fl["section"] = np.full_like(igm_fl["thick"], 100)
-    # igm_fls.width_m = 100
+
+    # Create arrays needed for flowline-based output: widths, dx, section
+    igm_fl["widths_m"] = np.full_like(igm_fl["thick"], dx)
+    igm_fl["dx_meter"] = np.full_like(igm_fl["thick"], dx)
+    igm_fl["section"] = np.full_like(igm_fl["thick"], dx*igm_fl["thick"])
     igm_fls = dict_to_namespace(igm_fls)
     return igm_fls
 

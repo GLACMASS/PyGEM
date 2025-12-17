@@ -17,7 +17,8 @@ import os
 import pickle
 import time
 import warnings
-from datetime import timedelta
+import traceback
+from datetime import timedelta, datetime, timezone
 
 import gpytorch
 import matplotlib.pyplot as plt
@@ -922,14 +923,37 @@ def run(list_packed_vars):
                 fls = gdir.read_pickle('model_flowlines')
 
         except Exception as err:
+            # # LOG FAILURE
+            # fail_fp = pygem_prms['root'] + '/Output/cal_fail/' + glacier_str.split('.')[0].zfill(2) + '/'
+            # if not os.path.exists(fail_fp):
+            #     os.makedirs(fail_fp, exist_ok=True)
+            # txt_fn_fail = glacier_str + '-cal_fail.txt'
+            # with open(fail_fp + txt_fn_fail, 'w') as text_file:
+            #     text_file.write(f'Error: {err}')
+            # continue
+
             # LOG FAILURE
             fail_fp = pygem_prms['root'] + '/Output/cal_fail/' + glacier_str.split('.')[0].zfill(2) + '/'
             if not os.path.exists(fail_fp):
                 os.makedirs(fail_fp, exist_ok=True)
+
             txt_fn_fail = glacier_str + '-cal_fail.txt'
-            with open(fail_fp + txt_fn_fail, 'w') as text_file:
-                text_file.write(f'Error: {err}')
-            continue
+            fail_path = os.path.join(fail_fp, txt_fn_fail)
+
+            # Capture full traceback text
+            tb_text = traceback.format_exc()
+
+            # Also capture a short repr of the exception and a timestamp
+            header = (
+                f"{datetime.now(timezone.utc).isoformat()}Z\n"
+                f"{glacier_str} failed to complete simulation\n"
+                f"Exception: {repr(err)}\n\n"
+            )
+
+            with open(fail_path, 'w') as text_file:
+                text_file.write(header)
+                text_file.write("Full traceback (most recent call last):\n")
+                text_file.write(tb_text)
 
         # ----- CALIBRATION OPTIONS ------
         modelprms = {
