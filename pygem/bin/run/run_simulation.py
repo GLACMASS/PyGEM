@@ -959,8 +959,9 @@ def run(list_packed_vars):
                     else:
                         nfls = fls
 
-                    # Record initial surface h for overdeepening calculations
-                    surface_h_initial = nfls[0].surface_h
+                    ######################################
+                    ### IGM pseudo flowline ###
+                    ######################################
                     
                     if args.option_dynamics == 'IGM':
                         # Set thickness product (to be added to config.yaml later)
@@ -985,32 +986,23 @@ def run(list_packed_vars):
                         mask = ds.glacier_mask.data == 1
                         
                         #Create pseudo flowline, and assign thickness and surface heights
-                        fls = create_pseudo_flowline(thick.values, surface_h.values, gdir.grid.dx)
+                        nfls = create_pseudo_flowline(thick.values, surface_h.values, gdir.grid.dx)
+
+                    # Record initial surface h for overdeepening calculations
+                    surface_h_initial = nfls[0].surface_h
 
 
                     # ------ MODEL WITH EVOLVING AREA ------
                     # Create mass balance model
-                    if args.option_dynamics == 'IGM': #FIXME: possible to merge with PyGEMMassBalance block below?
-                        # if debug:
-                        print('Creating SMB model for IGM glacier dynamics')
-                        # Create mass balance model IGM dynamics (pseudo-flowline)
-                        mbmod = PyGEMMassBalance(
-                            gdir,
-                            modelprms,
-                            glacier_rgi_table,
-                            fls=fls,
-                            fl_id=0,
-                        )
-                    else:
-                        # Mass balance model for use with flowline-based dynamics
-                        print('Creating SMB model for flowline-based dynamics')
-                        mbmod = PyGEMMassBalance(
-                            gdir,
-                            modelprms,
-                            glacier_rgi_table,
-                            fls=nfls,
-                            option_areaconstant=False,
-                        )
+                    # Mass balance model for use with flowline-based dynamics
+                    print('Creating SMB model for flowline-based dynamics')
+                    mbmod = PyGEMMassBalance(
+                        gdir,
+                        modelprms,
+                        glacier_rgi_table,
+                        fls=nfls,
+                        option_areaconstant=False,
+                    )
 
 
                     ######################################
