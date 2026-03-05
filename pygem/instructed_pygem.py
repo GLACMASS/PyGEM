@@ -8,24 +8,33 @@ Based on instructed_oggm.py by Julien Jehl, Fabien Maussion, and Guillaume Jouve
 """
 
 from datetime import datetime
-import igm.outputs.write_ncdf as igm_write
-import igm.outputs.write_ts as igm_write_ts
 
+import os
 import numpy as np
 import tensorflow as tf
-tf.config.experimental.set_memory_growth(tf.config.list_physical_devices("GPU")[0], True)  # Prevent TensorFlow from allocating all GPU memory
-import os
+gpus = tf.config.list_physical_devices("GPU")
+ # Prevent TensorFlow from allocating all GPU memory
+if gpus:
+    try:
+        tf.config.experimental.set_memory_growth(gpus[0], True)
+    except RuntimeError:
+        # Memory growth must be set before GPUs are initialized
+        pass
 
 from oggm import cfg, utils
 from oggm.cfg import G, SEC_IN_YEAR, SEC_IN_DAY
 
-import igm
 from pygem.interface2d import Model2D
 
+# IGM imports
+import igm as igm
 from igm.common.core.src import State
-from igm.common.runner.configuration.utils import EmptyClass
-from igm.common.runner.configuration.loader import load_yaml_as_cfg
-from igm.utils.gradient.compute_divflux import compute_divflux
+from igm.processes.iceflow.iceflow import initialize
+from igm.utils.grad.compute_divflux import compute_divflux
+from igm.processes.iceflow.iceflow import update
+from igm.common.runner.configuration.loader import load_yaml_recursive
+import igm.outputs.write_ncdf as igm_write
+import igm.outputs.write_ts as igm_write_ts
 
 
 class IGM_Model2D(Model2D):
@@ -96,8 +105,7 @@ class IGM_Model2D(Model2D):
         """
 
         self.state = State()
-
-        self.cfg = load_yaml_as_cfg(config)
+        self.cfg = load_yaml_recursive(os.path.join(igm.__path__[0], "conf"))
 
         # Parameter
         self.cfl = 0.25  # hard-coded, could be added to input parameters in config.yaml later

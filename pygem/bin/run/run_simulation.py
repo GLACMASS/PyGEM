@@ -1240,7 +1240,6 @@ def run(list_packed_vars):
                         )
                         # _, diag = ev_model.run_until_and_store(args.sim_endyear + 1)
 
-
                         # #    print('shape of volume:', ev_model.mb_model.glac_wide_volume_annual.shape, diag.volume_m3.shape)
                         ev_model.mb_model.glac_wide_volume_annual = diag.volume_m3.values
                         ev_model.mb_model.glac_wide_area_annual = diag.area_m2.values

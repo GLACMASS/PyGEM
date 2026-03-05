@@ -4,14 +4,16 @@ import subprocess
 from pygem.setup.config import ConfigManager
 
 
-calib_run_file = "/uio/hypatia/geofag-personlig/geohyd-staff/johanmbr/repos/PyGEM/pygem/bin/run/run_calibration.py"  # Johannes
-simulation_run_file = "/uio/hypatia/geofag-personlig/geohyd-staff/johanmbr/repos/PyGEM/pygem/bin/run/run_simulation.py"  # Johannes
+# calib_run_file = "/uio/hypatia/geofag-personlig/geohyd-staff/johanmbr/repos/PyGEM/pygem/bin/run/run_calibration.py"  # Johannes
+# simulation_run_file = "/uio/hypatia/geofag-personlig/geohyd-staff/johanmbr/repos/PyGEM/pygem/bin/run/run_simulation.py"  # Johannes
+calib_run_file = "/uio/hypatia/geofag-felles/projects/glacmass/henning/pygem/PyGEM/pygem/bin/run/run_calibration.py"  # Henning
+simulation_run_file = "/uio/hypatia/geofag-felles/projects/glacmass/henning/pygem/PyGEM/pygem/bin/run/run_simulation.py"  # Henning
 
 
 # Individual glacier simulation(s)
-glac_no = 08.00312  # Storbreen, Norway
+# glac_no = 08.00312  # Storbreen, Norway
 # glac_no = 08.01126 # Nigardsbreen, Norway
-# glac_no = 11.01450  # Great Aletsch, Switzerland
+glac_no = 11.01450  # Great Aletsch, Switzerland
 # glac_no = 11.00897 # Hintereisferner, Austria
 # glac_no = 15.03733  # Khumbu Glacier, Nepal
 # glac_no = [11.00897, 15.03733] # Hintereisferner, Austria and Khumbu Glacier, Nepal
@@ -39,7 +41,7 @@ isrunsimulationfuture = False
 
 climate_names = ["ERA5", "CESM2"]  # historic, future
 start_years = [2000, 2020]  # historic, future
-end_years = [2009, 2100]  # historic, future
+end_years = [2019, 2100]  # historic, future
 
 sim_climate_scenario = "ssp245"
 
